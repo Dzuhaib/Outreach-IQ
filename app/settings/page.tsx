@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Check, AlertCircle, Eye, EyeOff, Mail, Wifi,
-  LogIn, LogOut, ExternalLink, Cpu,
+  LogIn, LogOut, Cpu,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -210,41 +210,14 @@ function SettingsContent() {
           ) : (
             <div className="space-y-4">
               {/* Not connected state */}
-              <div className="px-4 py-3 bg-surface-2 border border-border rounded-lg">
-                <p className="text-xs text-text-2 leading-relaxed">
-                  Click below to sign in with Google. You&apos;ll be asked to grant permission to
-                  <strong className="text-text-1"> send emails on your behalf</strong>. No password is stored.
-                </p>
-              </div>
-
-              <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3">
-                <p className="text-xs font-medium text-text-2">Before connecting, you need:</p>
-                <ol className="text-xs text-text-3 space-y-1.5 list-decimal list-inside">
-                  <li>
-                    A{' '}
-                    <a
-                      href="https://console.cloud.google.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-accent hover:underline inline-flex items-center gap-0.5"
-                    >
-                      Google Cloud project <ExternalLink className="w-3 h-3" />
-                    </a>{' '}
-                    with the Gmail API enabled
-                  </li>
-                  <li>OAuth 2.0 credentials (Web application type)</li>
-                  <li>
-                    Redirect URI set to{' '}
-                    <code className="text-text-2 bg-surface-3 px-1 rounded">
-                      {(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/api/auth/google/callback'}
-                    </code>
-                  </li>
-                  <li>
-                    <code className="text-text-2 bg-surface-3 px-1 rounded">GOOGLE_CLIENT_ID</code> and{' '}
-                    <code className="text-text-2 bg-surface-3 px-1 rounded">GOOGLE_CLIENT_SECRET</code> in{' '}
-                    <code className="text-text-2 bg-surface-3 px-1 rounded">.env.local</code>
-                  </li>
-                </ol>
+              <div className="flex items-center gap-3 px-4 py-3 bg-surface-2 border border-border rounded-lg">
+                <div className="w-8 h-8 rounded-full bg-surface-3 border border-border flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-text-3" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-text-1">No account connected</p>
+                  <p className="text-xs text-text-3 mt-0.5">Sign in with Google to start sending emails from your Gmail address.</p>
+                </div>
               </div>
 
               <a href="/api/auth/google">
