@@ -1,28 +1,41 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Upload, Search, SlidersHorizontal, X } from 'lucide-react'
+import {
+  Plus, Upload, Search, SlidersHorizontal, X,
+  Zap, Send, CheckSquare,
+} from 'lucide-react'
 import { LeadTable } from '@/components/leads/LeadTable'
 import { AddLeadModal } from '@/components/leads/AddLeadModal'
 import { CSVImport } from '@/components/leads/CSVImport'
+import { BulkProgressModal, type BulkProgress } from '@/components/leads/BulkProgressModal'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
-import { ALL_STATUSES, STATUS_LABELS } from '@/lib/utils'
+import { ALL_STATUSES, STATUS_LABELS, sleep } from '@/lib/utils'
 import type { LeadListItem, LeadStatus, Lead } from '@/lib/types'
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<LeadListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // Filters
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [cityFilter, setCityFilter] = useState('')
   const [nicheFilter, setNicheFilter] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Modals
   const [showAdd, setShowAdd] = useState(false)
   const [showImport, setShowImport] = useState(false)
-  const [showFilters, setShowFilters] = useState(false)
+
+  // Selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Bulk progress
+  const [progress, setProgress] = useState<BulkProgress | null>(null)
 
   const fetchLeads = useCallback(async () => {
     setLoading(true)
@@ -46,9 +59,12 @@ export default function LeadsPage() {
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
 
+  // ── Single-lead actions ─────────────────────────────────────────────────────
+
   async function handleDelete(id: string) {
-    const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' })
-    if (res.ok) setLeads((prev) => prev.filter((l) => l.id !== id))
+    await fetch(`/api/leads/${id}`, { method: 'DELETE' })
+    setLeads((prev) => prev.filter((l) => l.id !== id))
+    setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n })
   }
 
   async function handleArchive(id: string) {
@@ -60,9 +76,7 @@ export default function LeadsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     })
-    if (res.ok) {
-      setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: newStatus } : l))
-    }
+    if (res.ok) setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: newStatus } : l))
   }
 
   async function handleStatusChange(id: string, status: LeadStatus) {
@@ -71,28 +85,155 @@ export default function LeadsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     })
-    if (res.ok) {
-      setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status } : l))
-    }
+    if (res.ok) setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status } : l))
   }
 
   function handleCreated(lead: Lead) {
-    const listItem: LeadListItem = {
-      id: lead.id,
-      businessName: lead.businessName,
-      websiteUrl: lead.websiteUrl,
-      city: lead.city,
-      niche: lead.niche,
-      email: lead.email,
-      status: lead.status,
-      archivedAt: lead.archivedAt,
-      createdAt: lead.createdAt,
-      _count: { emails: 0 },
+    const item: LeadListItem = {
+      id: lead.id, businessName: lead.businessName, websiteUrl: lead.websiteUrl,
+      city: lead.city, niche: lead.niche, email: lead.email, status: lead.status,
+      archivedAt: lead.archivedAt, createdAt: lead.createdAt, _count: { emails: 0 },
     }
-    setLeads((prev) => [listItem, ...prev])
+    setLeads((prev) => [item, ...prev])
   }
 
+  // ── Bulk: Analyze ───────────────────────────────────────────────────────────
+
+  async function handleBulkAnalyze(ids: Set<string>) {
+    const targets = leads.filter(
+      (l) => ids.has(l.id) && l.websiteUrl && l.status !== 'ARCHIVED',
+    )
+    if (targets.length === 0) {
+      alert('None of the selected leads have a website URL to analyze.')
+      return
+    }
+
+    setProgress({ type: 'analyze', current: 0, total: targets.length, currentName: '', done: false, results: [] })
+
+    for (let i = 0; i < targets.length; i++) {
+      const lead = targets[i]
+      setProgress((p) => p ? { ...p, currentName: lead.businessName } : p)
+
+      let ok = false
+      let errorMsg = ''
+      try {
+        const res = await fetch(`/api/leads/${lead.id}/analyze`, { method: 'POST' })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Analysis failed')
+        ok = true
+        setLeads((prev) => prev.map((l) => l.id === lead.id ? { ...l, status: 'ANALYZED' } : l))
+      } catch (err) {
+        errorMsg = err instanceof Error ? err.message : 'Failed'
+      }
+
+      setProgress((p) => p ? {
+        ...p,
+        current: i + 1,
+        results: [...p.results, { name: lead.businessName, ok, error: errorMsg || undefined }],
+      } : p)
+
+      // Small delay between AI calls to avoid rate limits
+      if (i < targets.length - 1) await sleep(1000)
+    }
+
+    setProgress((p) => p ? { ...p, done: true, currentName: '' } : p)
+  }
+
+  // ── Bulk: Generate & Send ───────────────────────────────────────────────────
+
+  async function handleBulkSend(ids: Set<string>) {
+    const targets = leads.filter(
+      (l) => ids.has(l.id) && l.email && l.status !== 'ARCHIVED',
+    )
+    if (targets.length === 0) {
+      alert('None of the selected leads have an email address. Add contact emails first.')
+      return
+    }
+
+    const notAnalyzed = targets.filter((l) => l.status === 'NEW')
+    if (notAnalyzed.length > 0) {
+      const confirmed = window.confirm(
+        `${notAnalyzed.length} lead(s) haven't been analyzed yet. ` +
+        `They'll be analyzed first, then emailed. Continue?`
+      )
+      if (!confirmed) return
+    }
+
+    setProgress({ type: 'send', current: 0, total: targets.length, currentName: '', done: false, results: [] })
+
+    for (let i = 0; i < targets.length; i++) {
+      const lead = targets[i]
+      setProgress((p) => p ? { ...p, currentName: lead.businessName } : p)
+
+      let ok = false
+      let errorMsg = ''
+
+      try {
+        // Step 1: Analyze if not yet done
+        if (lead.status === 'NEW' && lead.websiteUrl) {
+          const aRes = await fetch(`/api/leads/${lead.id}/analyze`, { method: 'POST' })
+          if (!aRes.ok) {
+            const d = await aRes.json()
+            throw new Error(d.error || 'Analysis failed')
+          }
+          setLeads((prev) => prev.map((l) => l.id === lead.id ? { ...l, status: 'ANALYZED' } : l))
+          await sleep(500)
+        }
+
+        // Step 2: Generate email
+        const gRes = await fetch(`/api/leads/${lead.id}/generate-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'INITIAL' }),
+        })
+        const gData = await gRes.json()
+        if (!gRes.ok) throw new Error(gData.error || 'Generation failed')
+
+        // Step 3: Send email
+        const sRes = await fetch(`/api/leads/${lead.id}/send-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emailId: gData.id }),
+        })
+        const sData = await sRes.json()
+        if (!sRes.ok) throw new Error(sData.error || 'Send failed')
+
+        ok = true
+        setLeads((prev) => prev.map((l) => l.id === lead.id ? { ...l, status: 'EMAIL_SENT' } : l))
+      } catch (err) {
+        errorMsg = err instanceof Error ? err.message : 'Failed'
+      }
+
+      setProgress((p) => p ? {
+        ...p,
+        current: i + 1,
+        results: [...p.results, { name: lead.businessName, ok, error: errorMsg || undefined }],
+      } : p)
+
+      // 3s delay between sends to avoid being flagged as spam
+      if (i < targets.length - 1) await sleep(3000)
+    }
+
+    setProgress((p) => p ? { ...p, done: true, currentName: '' } : p)
+  }
+
+  // ── Bulk: Analyze All New ───────────────────────────────────────────────────
+
+  function handleAnalyzeAllNew() {
+    const newWithUrl = new Set(
+      leads.filter((l) => l.status === 'NEW' && l.websiteUrl).map((l) => l.id)
+    )
+    if (newWithUrl.size === 0) {
+      alert('No new leads with a website URL found.')
+      return
+    }
+    handleBulkAnalyze(newWithUrl)
+  }
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
+
   const hasFilters = !!(statusFilter || cityFilter || nicheFilter)
+  const newLeadsWithUrl = leads.filter((l) => l.status === 'NEW' && l.websiteUrl).length
 
   return (
     <div className="p-8">
@@ -102,12 +243,21 @@ export default function LeadsPage() {
           <h1 className="text-2xl font-bold text-text-1 tracking-tight">Leads</h1>
           <p className="text-sm text-text-2 mt-1">
             {leads.length} lead{leads.length !== 1 ? 's' : ''}
+            {newLeadsWithUrl > 0 && (
+              <span className="ml-2 text-text-3">· {newLeadsWithUrl} new with website</span>
+            )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {newLeadsWithUrl > 0 && (
+            <Button variant="secondary" onClick={handleAnalyzeAllNew}>
+              <Zap className="w-4 h-4" />
+              Analyze All New ({newLeadsWithUrl})
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => setShowImport(true)}>
             <Upload className="w-4 h-4" />
-            Import CSV
+            Import
           </Button>
           <Button onClick={() => setShowAdd(true)}>
             <Plus className="w-4 h-4" />
@@ -128,10 +278,7 @@ export default function LeadsPage() {
             className="w-full bg-surface-2 border border-border rounded-md pl-9 pr-3 py-2 text-sm text-text-1 placeholder-text-3 focus:outline-none focus:border-accent/60"
           />
           {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-3 hover:text-text-1"
-            >
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-3 hover:text-text-1">
               <X className="w-3.5 h-3.5" />
             </button>
           )}
@@ -182,19 +329,46 @@ export default function LeadsPage() {
             />
           </div>
           {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setStatusFilter(''); setCityFilter(''); setNicheFilter('') }}
-            >
-              <X className="w-3.5 h-3.5" />
-              Clear
+            <Button variant="ghost" size="sm" onClick={() => { setStatusFilter(''); setCityFilter(''); setNicheFilter('') }}>
+              <X className="w-3.5 h-3.5" /> Clear
             </Button>
           )}
         </div>
       )}
 
-      {/* Error */}
+      {/* Bulk action bar — appears when leads are selected */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 px-4 py-3 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
+          <CheckSquare className="w-4 h-4 text-accent shrink-0" />
+          <span className="text-sm font-medium text-text-1">
+            {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} selected
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleBulkAnalyze(selectedIds)}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              Analyze Selected
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleBulkSend(selectedIds)}
+            >
+              <Send className="w-3.5 h-3.5" />
+              Generate & Send
+            </Button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="p-1.5 rounded hover:bg-surface-2 text-text-3 hover:text-text-1 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-md px-4 py-3">
           {error}
@@ -208,6 +382,8 @@ export default function LeadsPage() {
         ) : (
           <LeadTable
             leads={leads}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
             onDelete={handleDelete}
             onArchive={handleArchive}
             onStatusChange={handleStatusChange}
@@ -217,6 +393,16 @@ export default function LeadsPage() {
 
       <AddLeadModal open={showAdd} onClose={() => setShowAdd(false)} onCreated={handleCreated} />
       <CSVImport open={showImport} onClose={() => setShowImport(false)} onImported={() => fetchLeads()} />
+
+      {progress && (
+        <BulkProgressModal
+          progress={progress}
+          onClose={() => {
+            setProgress(null)
+            setSelectedIds(new Set())
+          }}
+        />
+      )}
     </div>
   )
 }
