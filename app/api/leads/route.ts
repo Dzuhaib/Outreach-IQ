@@ -14,6 +14,9 @@ export async function GET(request: Request) {
     const opened = searchParams.get('opened') === 'true'
     const limit = parseInt(searchParams.get('limit') || '200')
 
+    // Claim any orphaned leads (created before multi-user auth) on first request
+    await prisma.lead.updateMany({ where: { userId: null }, data: { userId: user.id } })
+
     const where: Record<string, unknown> = { userId: user.id }
 
     if (search) {
