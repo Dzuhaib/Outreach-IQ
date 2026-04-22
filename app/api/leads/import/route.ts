@@ -1,55 +1,50 @@
 import { NextResponse } from 'next/server'
+import * as XLSX from 'xlsx'
 import { prisma } from '@/lib/db'
 
-interface CSVRow {
-  businessname?: string
-  businessName?: string
-  business_name?: string
-  name?: string
-  websiteurl?: string
-  websiteUrl?: string
-  website_url?: string
-  website?: string
-  url?: string
-  city?: string
-  niche?: string
-  industry?: string
-  email?: string
-  contactemail?: string
-  contact_email?: string
+type RawRow = Record<string, string | number | boolean | null | undefined>
+
+/** Normalize a header key to lowercase no-spaces for fuzzy matching */
+function normalizeKey(key: string): string {
+  return String(key).toLowerCase().replace(/[\s_\-]+/g, '')
 }
 
-function normalizeRow(row: CSVRow) {
-  const get = (...keys: string[]) => {
-    for (const k of keys) {
-      const val = (row as Record<string, string | undefined>)[k] || (row as Record<string, string | undefined>)[k.toLowerCase()]
-      if (val && val.trim()) return val.trim()
+/** Pick the first matching value from a row by trying multiple key variants */
+function pick(row: RawRow, ...candidates: string[]): string | null {
+  const normalized = Object.fromEntries(
+    Object.entries(row).map(([k, v]) => [normalizeKey(k), v]),
+  )
+  for (const candidate of candidates) {
+    const val = normalized[normalizeKey(candidate)]
+    if (val !== undefined && val !== null && String(val).trim()) {
+      return String(val).trim()
     }
-    return null
   }
+  return null
+}
 
+function normalizeRow(row: RawRow) {
   return {
-    businessName: get('businessName', 'businessname', 'business_name', 'name'),
-    websiteUrl: get('websiteUrl', 'websiteurl', 'website_url', 'website', 'url'),
-    city: get('city'),
-    niche: get('niche', 'industry'),
-    email: get('email', 'contactEmail', 'contactemail', 'contact_email'),
+    businessName: pick(row, 'businessName', 'business_name', 'business', 'name', 'company'),
+    websiteUrl: pick(row, 'websiteUrl', 'website_url', 'website', 'url', 'site'),
+    city: pick(row, 'city', 'location', 'town'),
+    niche: pick(row, 'niche', 'industry', 'category', 'sector'),
+    email: pick(row, 'email', 'contactEmail', 'contact_email', 'emailAddress'),
   }
 }
 
-/** Parse CSV text into rows of key-value objects */
-function parseCSV(text: string): Record<string, string>[] {
+/** Parse CSV text into rows */
+function parseCSV(text: string): RawRow[] {
   const lines = text.trim().split(/\r?\n/)
   if (lines.length < 2) return []
 
-  // Parse headers
-  const headers = splitCSVLine(lines[0]).map((h) => h.trim().toLowerCase().replace(/\s+/g, ''))
+  const headers = splitCSVLine(lines[0]).map((h) => h.trim())
+  const rows: RawRow[] = []
 
-  const rows: Record<string, string>[] = []
   for (let i = 1; i < lines.length; i++) {
     const values = splitCSVLine(lines[i])
-    if (values.every((v) => !v.trim())) continue // skip empty rows
-    const row: Record<string, string> = {}
+    if (values.every((v) => !v.trim())) continue
+    const row: RawRow = {}
     headers.forEach((h, idx) => { row[h] = values[idx]?.trim() || '' })
     rows.push(row)
   }
@@ -76,28 +71,49 @@ function splitCSVLine(line: string): string[] {
   return result
 }
 
+/** Parse XLSX/XLS buffer into rows */
+function parseXLSX(buffer: ArrayBuffer): RawRow[] {
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  const sheetName = workbook.SheetNames[0]
+  if (!sheetName) return []
+  const sheet = workbook.Sheets[sheetName]
+  return XLSX.utils.sheet_to_json<RawRow>(sheet, { defval: '' })
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File | null
 
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
-    if (!file.name.endsWith('.csv')) {
-      return NextResponse.json({ error: 'File must be a CSV' }, { status: 400 })
+
+    const name = file.name.toLowerCase()
+    const isCSV = name.endsWith('.csv')
+    const isXLSX = name.endsWith('.xlsx') || name.endsWith('.xls')
+
+    if (!isCSV && !isXLSX) {
+      return NextResponse.json({ error: 'File must be a CSV or Excel (.xlsx/.xls) file' }, { status: 400 })
     }
 
-    const text = await file.text()
-    const rows = parseCSV(text)
+    let rows: RawRow[] = []
+
+    if (isCSV) {
+      const text = await file.text()
+      rows = parseCSV(text)
+    } else {
+      const buffer = await file.arrayBuffer()
+      rows = parseXLSX(buffer)
+    }
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'CSV file is empty or has no data rows' }, { status: 400 })
+      return NextResponse.json({ error: 'File is empty or has no data rows' }, { status: 400 })
     }
 
     let created = 0
     const errors: string[] = []
 
     for (let i = 0; i < rows.length; i++) {
-      const norm = normalizeRow(rows[i] as CSVRow)
+      const norm = normalizeRow(rows[i])
       if (!norm.businessName) {
         errors.push(`Row ${i + 2}: missing business name`)
         continue
@@ -115,7 +131,7 @@ export async function POST(request: Request) {
         })
         created++
       } catch {
-        errors.push(`Row ${i + 2}: failed to create lead for "${norm.businessName}"`)
+        errors.push(`Row ${i + 2}: failed to save "${norm.businessName}"`)
       }
     }
 

@@ -24,8 +24,9 @@ export function CSVImport({ open, onClose, onImported }: CSVImportProps) {
   const fileRef = useRef<HTMLInputElement>(null)
 
   function handleFile(f: File) {
-    if (!f.name.endsWith('.csv')) {
-      alert('Please select a CSV file')
+    const name = f.name.toLowerCase()
+    if (!name.endsWith('.csv') && !name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      alert('Please select a CSV or Excel (.xlsx / .xls) file')
       return
     }
     setFile(f)
@@ -61,7 +62,7 @@ export function CSVImport({ open, onClose, onImported }: CSVImportProps) {
       <div className="space-y-4">
         {/* Format hint */}
         <div className="bg-surface-2 border border-border rounded-md p-3">
-          <p className="text-xs text-text-2 font-medium mb-1">Expected CSV columns:</p>
+          <p className="text-xs text-text-2 font-medium mb-1">Expected columns (CSV or Excel):</p>
           <code className="text-xs text-accent">
             businessName, websiteUrl, city, niche, email
           </code>
@@ -86,7 +87,7 @@ export function CSVImport({ open, onClose, onImported }: CSVImportProps) {
           <input
             ref={fileRef}
             type="file"
-            accept=".csv"
+            accept=".csv,.xlsx,.xls"
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
           />
@@ -98,7 +99,7 @@ export function CSVImport({ open, onClose, onImported }: CSVImportProps) {
           ) : (
             <div>
               <Upload className="w-6 h-6 text-text-3 mx-auto mb-2" />
-              <p className="text-sm text-text-2">Drop your CSV here or click to browse</p>
+              <p className="text-sm text-text-2">Drop your CSV or Excel file here or click to browse</p>
             </div>
           )}
         </div>
