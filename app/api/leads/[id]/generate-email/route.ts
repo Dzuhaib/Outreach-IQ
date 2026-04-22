@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { generateEmail } from '@/lib/ai'
-import type { EmailType, WebsiteAnalysis } from '@/lib/types'
+import type { EmailType, WebsiteAnalysis, RichAnalysis } from '@/lib/types'
 
 // Allow up to 30s for OpenAI email generation
 export const maxDuration = 30
@@ -23,7 +23,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
     }
 
     const settings = await prisma.settings.findFirst()
-    const analysis: WebsiteAnalysis = JSON.parse(lead.analysis)
+    const analysis: WebsiteAnalysis | RichAnalysis = JSON.parse(lead.analysis)
 
     const { subject, body } = await generateEmail({
       businessName: lead.businessName,

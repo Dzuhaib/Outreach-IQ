@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Users, Mail, MessageSquare, TrendingUp, ArrowRight, BarChart3, Eye,
+  Users, Mail, MessageSquare, TrendingUp, ArrowRight, BarChart3, Eye, MailOpen,
 } from 'lucide-react'
 import { StatsCard } from '@/components/dashboard/StatsCard'
 import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge'
@@ -106,6 +106,25 @@ export default function DashboardPage() {
                 </div>
               )
             })}
+
+            {/* Email opens — not a status but a key pipeline signal */}
+            {(stats?.leadsWithOpens ?? 0) > 0 && (
+              <div className="pt-2 mt-2 border-t border-border">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="flex items-center gap-1.5 text-xs text-blue-400">
+                    <MailOpen className="w-3 h-3" />
+                    Email Opened
+                  </span>
+                  <span className="text-xs font-medium text-blue-400">{stats!.leadsWithOpens}</span>
+                </div>
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    style={{ width: `${stats!.totalLeads > 0 ? Math.round((stats!.leadsWithOpens / stats!.totalLeads) * 100) : 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

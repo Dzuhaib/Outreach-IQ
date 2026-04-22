@@ -9,11 +9,12 @@ import { LeadTable } from '@/components/leads/LeadTable'
 import { AddLeadModal } from '@/components/leads/AddLeadModal'
 import { CSVImport } from '@/components/leads/CSVImport'
 import { BulkProgressModal, type BulkProgress } from '@/components/leads/BulkProgressModal'
+import { BulkAnalyzeOptionsModal } from '@/components/leads/BulkAnalyzeOptionsModal'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { ALL_STATUSES, STATUS_LABELS, sleep } from '@/lib/utils'
-import type { LeadListItem, LeadStatus, Lead } from '@/lib/types'
+import type { LeadListItem, LeadStatus, Lead, AnalysisType } from '@/lib/types'
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<LeadListItem[]>([])
@@ -36,6 +37,9 @@ export default function LeadsPage() {
 
   // Bulk progress
   const [progress, setProgress] = useState<BulkProgress | null>(null)
+
+  // Pending bulk analyze — ids waiting for options modal confirmation
+  const [pendingAnalyzeIds, setPendingAnalyzeIds] = useState<Set<string> | null>(null)
 
   const fetchLeads = useCallback(async () => {
     setLoading(true)
@@ -97,17 +101,19 @@ export default function LeadsPage() {
     setLeads((prev) => [item, ...prev])
   }
 
-  // ── Bulk: Analyze ───────────────────────────────────────────────────────────
+  // ── Bulk: Analyze (shows options modal first) ───────────────────────────────
 
-  async function handleBulkAnalyze(ids: Set<string>) {
-    const targets = leads.filter(
-      (l) => ids.has(l.id) && l.websiteUrl && l.status !== 'ARCHIVED',
-    )
+  function handleBulkAnalyze(ids: Set<string>) {
+    const targets = leads.filter((l) => ids.has(l.id) && l.websiteUrl && l.status !== 'ARCHIVED')
     if (targets.length === 0) {
       alert('None of the selected leads have a website URL to analyze.')
       return
     }
+    setPendingAnalyzeIds(new Set(targets.map((l) => l.id)))
+  }
 
+  async function startBulkAnalyze(ids: Set<string>, types: AnalysisType[]) {
+    const targets = leads.filter((l) => ids.has(l.id))
     setProgress({ type: 'analyze', current: 0, total: targets.length, currentName: '', done: false, results: [] })
 
     for (let i = 0; i < targets.length; i++) {
@@ -117,7 +123,11 @@ export default function LeadsPage() {
       let ok = false
       let errorMsg = ''
       try {
-        const res = await fetch(`/api/leads/${lead.id}/analyze`, { method: 'POST' })
+        const res = await fetch(`/api/leads/${lead.id}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ types }),
+        })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Analysis failed')
         ok = true
@@ -132,7 +142,6 @@ export default function LeadsPage() {
         results: [...p.results, { name: lead.businessName, ok, error: errorMsg || undefined }],
       } : p)
 
-      // Small delay between AI calls to avoid rate limits
       if (i < targets.length - 1) await sleep(1000)
     }
 
@@ -169,9 +178,13 @@ export default function LeadsPage() {
       let errorMsg = ''
 
       try {
-        // Step 1: Analyze if not yet done
+        // Step 1: Analyze if not yet done (full analysis for email generation)
         if (lead.status === 'NEW' && lead.websiteUrl) {
-          const aRes = await fetch(`/api/leads/${lead.id}/analyze`, { method: 'POST' })
+          const aRes = await fetch(`/api/leads/${lead.id}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ types: ['chatbot', 'website', 'seo'] }),
+          })
           if (!aRes.ok) {
             const d = await aRes.json()
             throw new Error(d.error || 'Analysis failed')
@@ -227,7 +240,8 @@ export default function LeadsPage() {
       alert('No new leads with a website URL found.')
       return
     }
-    handleBulkAnalyze(newWithUrl)
+    // Go through options modal
+    setPendingAnalyzeIds(newWithUrl)
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
@@ -393,6 +407,18 @@ export default function LeadsPage() {
 
       <AddLeadModal open={showAdd} onClose={() => setShowAdd(false)} onCreated={handleCreated} />
       <CSVImport open={showImport} onClose={() => setShowImport(false)} onImported={() => fetchLeads()} />
+
+      {pendingAnalyzeIds && (
+        <BulkAnalyzeOptionsModal
+          leadCount={pendingAnalyzeIds.size}
+          onStart={(types) => {
+            const ids = pendingAnalyzeIds
+            setPendingAnalyzeIds(null)
+            startBulkAnalyze(ids, types)
+          }}
+          onClose={() => setPendingAnalyzeIds(null)}
+        />
+      )}
 
       {progress && (
         <BulkProgressModal
