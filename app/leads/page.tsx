@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Plus, Upload, Search, SlidersHorizontal, X,
-  Zap, Send, CheckSquare,
+  Zap, Send, CheckSquare, Trash2,
 } from 'lucide-react'
 import { LeadTable } from '@/components/leads/LeadTable'
 import { AddLeadModal } from '@/components/leads/AddLeadModal'
@@ -44,6 +44,9 @@ function LeadsPage() {
 
   // Pending bulk analyze — ids waiting for options modal confirmation
   const [pendingAnalyzeIds, setPendingAnalyzeIds] = useState<Set<string> | null>(null)
+
+  // Bulk delete confirmation
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
 
   const fetchLeads = useCallback(async () => {
     setLoading(true)
@@ -250,6 +253,16 @@ function LeadsPage() {
     setPendingAnalyzeIds(newWithUrl)
   }
 
+  // ── Bulk: Delete ────────────────────────────────────────────────────────────
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds)
+    await Promise.all(ids.map((id) => fetch(`/api/leads/${id}`, { method: 'DELETE' })))
+    setLeads((prev) => prev.filter((l) => !selectedIds.has(l.id)))
+    setSelectedIds(new Set())
+    setConfirmBulkDelete(false)
+  }
+
   // ── Derived ─────────────────────────────────────────────────────────────────
 
   const hasFilters = !!(statusFilter || cityFilter || nicheFilter)
@@ -381,6 +394,14 @@ function LeadsPage() {
               <Send className="w-3.5 h-3.5" />
               Generate & Send
             </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setConfirmBulkDelete(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete Selected
+            </Button>
             <button
               onClick={() => setSelectedIds(new Set())}
               className="p-1.5 rounded hover:bg-surface-2 text-text-3 hover:text-text-1 transition-colors"
@@ -436,6 +457,25 @@ function LeadsPage() {
             setSelectedIds(new Set())
           }}
         />
+      )}
+
+      {confirmBulkDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setConfirmBulkDelete(false)} />
+          <div className="relative bg-surface border border-border rounded-xl p-6 max-w-sm w-full shadow-2xl animate-fade-in">
+            <h3 className="text-base font-semibold text-text-1 mb-2">Delete {selectedIds.size} Lead{selectedIds.size !== 1 ? 's' : ''}?</h3>
+            <p className="text-sm text-text-2 mb-5">
+              This will permanently delete the selected leads and all their associated emails. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" size="sm" onClick={() => setConfirmBulkDelete(false)}>Cancel</Button>
+              <Button variant="danger" size="sm" onClick={handleBulkDelete}>
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete {selectedIds.size} Lead{selectedIds.size !== 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
