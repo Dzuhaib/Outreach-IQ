@@ -107,6 +107,15 @@ Rules: score 0-100 (higher = better), 4-7 issues, be concrete and specific.`
   }
 }
 
+async function fetchTextSafe(url: string, timeoutMs = 8000): Promise<string> {
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const r = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OutreachBot/1.0)' } })
+    return r.ok ? await r.text() : ''
+  } catch { return '' } finally { clearTimeout(t) }
+}
+
 async function analyzeSEO(
   html: string,
   url: string,
@@ -114,7 +123,25 @@ async function analyzeSEO(
   client: OpenAI,
   model: string,
 ): Promise<SEOResult> {
-  // Parse structural signals directly from HTML
+  // ── 1. Derive base URL ────────────────────────────────────────────────────
+  let origin = ''
+  try { origin = new URL(url).origin } catch { origin = '' }
+
+  // ── 2. Fetch robots.txt + sitemap in parallel (non-blocking) ─────────────
+  const [robotsTxt, sitemapXml] = await Promise.all([
+    origin ? fetchTextSafe(`${origin}/robots.txt`) : Promise.resolve(''),
+    origin ? fetchTextSafe(`${origin}/sitemap.xml`) : Promise.resolve(''),
+  ])
+
+  const hasRobotsTxt = robotsTxt.length > 0
+  // Detect blanket Disallow: / targeting * or Googlebot
+  const robotsBlocksAll = /User-agent:\s*\*[\s\S]*?Disallow:\s*\/(?:\s|$)/i.test(robotsTxt) ||
+    /User-agent:\s*Googlebot[\s\S]*?Disallow:\s*\/(?:\s|$)/i.test(robotsTxt)
+  // Sitemap found in robots.txt OR as /sitemap.xml
+  const hasSitemap = /^Sitemap:/im.test(robotsTxt) ||
+    sitemapXml.includes('<?xml') || sitemapXml.includes('<urlset') || sitemapXml.includes('<sitemapindex')
+
+  // ── 3. Parse HTML signals ─────────────────────────────────────────────────
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i)
   const title = titleMatch?.[1]?.trim() || ''
 
@@ -123,72 +150,160 @@ async function analyzeSEO(
     html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i)
   const metaDescription = metaDescMatch?.[1]?.trim() || ''
 
+  // noindex detection
+  const hasNoindex =
+    /<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*noindex/i.test(html) ||
+    /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]+name=["']robots["']/i.test(html)
+
   const h1Count = (html.match(/<h1[\s>]/gi) || []).length
   const h2Count = (html.match(/<h2[\s>]/gi) || []).length
   const h3Count = (html.match(/<h3[\s>]/gi) || []).length
   const hasCanonical = /rel=["']canonical["']/i.test(html)
+  const mobileReady = /viewport.*width=device-width/i.test(html)
+  const hasHTTPS = url.startsWith('https://')
+
   const hasSchema = html.includes('application/ld+json')
   const schemaTypeMatches = html.match(/"@type"\s*:\s*"([^"]+)"/g) || []
   const schemaTypes = [
-    ...new Set(
-      schemaTypeMatches.map((m) => m.replace(/"@type"\s*:\s*"/, '').replace(/"$/, ''))
-    ),
+    ...new Set(schemaTypeMatches.map((m) => m.replace(/"@type"\s*:\s*"/, '').replace(/"$/, ''))),
   ]
+
   const imgTags = html.match(/<img[^>]*>/gi) || []
   const imagesWithoutAlt = imgTags.filter((img) => !/alt=["'][^"']+["']/i.test(img)).length
+
+  // Internal vs external links
+  const allLinks = html.match(/href=["']([^"'#?]+)["']/gi) || []
+  let internalLinksCount = 0
+  let externalLinksCount = 0
+  for (const link of allLinks) {
+    const href = link.replace(/href=["']/, '').replace(/["']$/, '')
+    if (href.startsWith('/') || (origin && href.startsWith(origin))) internalLinksCount++
+    else if (href.startsWith('http')) externalLinksCount++
+  }
+
+  // URL structure quality — penalise params, .html extensions, very deep paths
+  const urlPath = (() => { try { return new URL(url).pathname } catch { return '' } })()
+  const cleanUrls = !url.includes('?') && !urlPath.endsWith('.html') && !urlPath.endsWith('.php') &&
+    (urlPath.split('/').filter(Boolean).length <= 4)
+
   const textContent = stripHtml(html)
   const estimatedWordCount = textContent.split(/\s+/).filter((w) => w.length > 2).length
 
-  const prompt = `You are an SEO expert auditing a small business website for an agency.
+  // ── 4. AI comprehensive analysis ─────────────────────────────────────────
+  const prompt = `You are an expert SEO consultant auditing a small business website for a cold outreach agency.
+Your analysis will be used to decide whether to pitch this business as an SEO client and to craft a targeted email.
 
 Business: ${businessName}
 URL: ${url}
+Industry / niche: inferred from content below
 
-Pre-parsed technical signals:
-- Title tag: "${title}" (${title.length} chars — ideal 50-60)
-- Meta description: "${metaDescription ? metaDescription.slice(0, 120) : 'MISSING'}" (${metaDescription.length} chars — ideal 150-160)
-- H1 count: ${h1Count} (should be exactly 1), H2: ${h2Count}, H3: ${h3Count}
-- Canonical tag: ${hasCanonical ? 'yes' : 'missing'}
-- JSON-LD schema: ${hasSchema ? `yes — types detected: ${schemaTypes.slice(0, 6).join(', ') || 'unknown'}` : 'missing'}
-- Images missing alt text: ${imagesWithoutAlt}
-- Estimated page word count: ${estimatedWordCount} (thin content = below 300 words)
+=== PRE-PARSED TECHNICAL SIGNALS ===
+HTTPS: ${hasHTTPS ? 'yes' : 'NO — missing'}
+robots.txt: ${hasRobotsTxt ? 'present' : 'missing'}
+Blanket crawl block in robots.txt: ${robotsBlocksAll ? 'YES — Google is blocked!' : 'no'}
+XML sitemap: ${hasSitemap ? 'found' : 'NOT FOUND'}
+noindex meta tag: ${hasNoindex ? 'YES — page blocked from indexing!' : 'no'}
+Canonical tag: ${hasCanonical ? 'present' : 'missing'}
+Mobile viewport: ${mobileReady ? 'yes' : 'NO — not mobile-ready'}
+Clean URL structure: ${cleanUrls ? 'yes' : 'issues detected'}
+Title: "${title}" (${title.length} chars, ideal 50-60)
+Meta description: "${metaDescription ? metaDescription.slice(0, 120) : 'MISSING'}" (${metaDescription.length} chars, ideal 150-160)
+H1: ${h1Count} (ideal = 1), H2: ${h2Count}, H3: ${h3Count}
+JSON-LD schema markup: ${hasSchema ? `yes — ${schemaTypes.slice(0, 5).join(', ') || 'types unknown'}` : 'MISSING'}
+Images missing alt text: ${imagesWithoutAlt} of ${imgTags.length}
+Internal links on page: ${internalLinksCount}
+External links on page: ${externalLinksCount}
+Estimated word count: ${estimatedWordCount} (thin = <300, good = 800+)
 
-Page content sample:
-${textContent.slice(0, 2800)}
+=== PAGE CONTENT SAMPLE ===
+${textContent.slice(0, 3000)}
 
-Identify specific SEO weaknesses AND any genuine strengths.
-Respond ONLY with valid JSON:
+=== YOUR TASK ===
+Analyse across ALL 7 SEO dimensions. For each, give a score (0-100) and 1-3 specific, actionable issues.
+Base backlinks/traffic/rankings on indirect signals you can observe (content quality, domain structure, schema, technical health, niche competition level).
+
+Respond ONLY with valid JSON matching this exact structure (no extra keys, no markdown):
 {
-  "score": 38,
-  "issues": ["specific SEO issue in one sentence", "..."],
-  "strengths": ["specific SEO strength if truly present", "..."]
+  "overall_score": 42,
+  "technical":        { "score": 55, "issues": ["robots.txt is missing", "no XML sitemap found"] },
+  "on_page":          { "score": 40, "issues": ["title tag missing target keyword", "H1 duplicates page title without variation"] },
+  "content":          { "score": 35, "issues": ["~180 words is too thin for competitive ranking", "no blog or resource section for topic clustering"] },
+  "backlinks":        { "score": 30, "issues": ["no outbound links to authority sites signals low trust", "no schema markup reduces chance of rich snippet citations"] },
+  "traffic_rankings": { "score": 25, "issues": ["thin content unlikely to rank beyond branded queries", "no long-tail keyword targeting visible in headings"] },
+  "competitor_gap":   { "score": 40, "issues": ["competitors in this niche typically have 3-5x more content", "local SEO signals (NAP, LocalBusiness schema) absent"] },
+  "conversion":       { "score": 50, "issues": ["primary CTA not visible above the fold", "no trust signals near conversion points"] },
+  "strengths": ["HTTPS enabled", "mobile viewport present"],
+  "contact_recommendation": "yes",
+  "contact_reason": "Ranking signals are weak, thin content, missing technical basics — high opportunity for improvement"
 }
-Rules: score 0-100, 3-6 issues, 0-3 strengths (only if genuinely present), be specific.`
+
+contact_recommendation values:
+- "yes" — clear SEO gaps, opportunity to win the project (page 2-3 ranking signals, weak content, technical issues, competitors beating them)
+- "low-priority" — some issues but already decent; might be hard to sell
+- "avoid" — already highly optimised, or domain appears inactive/spammy/no business intent`
 
   const res = await client.chat.completions.create({
-    model, max_tokens: 700, temperature: 0.2,
+    model, max_tokens: 1400, temperature: 0.2,
     messages: [{ role: 'user', content: prompt }],
   })
-  const text2 = res.choices[0]?.message?.content || ''
-  const m2 = text2.match(/\{[\s\S]*\}/)
-  if (!m2) throw new Error('Invalid SEO analysis response')
-  const ai = JSON.parse(m2[0])
+  const aiText = res.choices[0]?.message?.content || ''
+  const m = aiText.match(/\{[\s\S]*\}/)
+  if (!m) throw new Error('Invalid SEO analysis response')
+  const ai = JSON.parse(m[0])
+
+  // Flatten top issues for email generation (non-SEO-only path)
+  const allIssues: string[] = [
+    ...(ai.technical?.issues || []),
+    ...(ai.on_page?.issues || []),
+    ...(ai.content?.issues || []),
+  ].slice(0, 5)
+
+  const def = (o: { score?: number; issues?: string[] } | undefined) => ({
+    score: o?.score ?? 40,
+    issues: o?.issues || [],
+  })
 
   return {
-    score: ai.score ?? 40,
+    score: ai.overall_score ?? 40,
+
+    hasHTTPS,
+    hasRobotsTxt,
+    robotsBlocksAll,
+    hasSitemap,
+    hasNoindex,
+    hasCanonical,
+    mobileReady,
+    cleanUrls,
+
     hasTitle: !!title,
     titleLength: title.length,
+    title,
     hasMetaDescription: !!metaDescription,
     metaDescriptionLength: metaDescription.length,
+    metaDescription,
     h1Count,
     h2Count,
+    h3Count,
+    imagesWithoutAlt,
+    internalLinksCount,
+    externalLinksCount,
+
     hasSchemaMarkup: hasSchema,
     schemaTypes,
-    hasCanonical,
-    imagesWithoutAlt,
     estimatedWordCount,
-    issues: ai.issues || [],
+
+    technical:        def(ai.technical),
+    onPage:           def(ai.on_page),
+    content:          def(ai.content),
+    backlinks:        def(ai.backlinks),
+    trafficRankings:  def(ai.traffic_rankings),
+    competitorGap:    def(ai.competitor_gap),
+    conversion:       def(ai.conversion),
+
+    issues: allIssues,
     strengths: ai.strengths || [],
+    contactRecommendation: ai.contact_recommendation ?? 'low-priority',
+    contactReason: ai.contact_reason ?? '',
   }
 }
 
@@ -222,11 +337,18 @@ export async function analyzeWebsite(
     try {
       seo = await analyzeSEO(html, url, businessName, client, model)
     } catch {
+      const empty = { score: 0, issues: [] }
       seo = {
-        score: 40, hasTitle: false, titleLength: 0, hasMetaDescription: false,
-        metaDescriptionLength: 0, h1Count: 0, h2Count: 0, hasSchemaMarkup: false,
-        schemaTypes: [], hasCanonical: false, imagesWithoutAlt: 0, estimatedWordCount: 0,
-        issues: [], strengths: [],
+        score: 40,
+        hasHTTPS: url.startsWith('https://'), hasRobotsTxt: false, robotsBlocksAll: false,
+        hasSitemap: false, hasNoindex: false, hasCanonical: false, mobileReady: false, cleanUrls: false,
+        hasTitle: false, titleLength: 0, title: '', hasMetaDescription: false,
+        metaDescriptionLength: 0, metaDescription: '', h1Count: 0, h2Count: 0, h3Count: 0,
+        imagesWithoutAlt: 0, internalLinksCount: 0, externalLinksCount: 0,
+        hasSchemaMarkup: false, schemaTypes: [], estimatedWordCount: 0,
+        technical: empty, onPage: empty, content: empty, backlinks: empty,
+        trafficRankings: empty, competitorGap: empty, conversion: empty,
+        issues: [], strengths: [], contactRecommendation: 'low-priority', contactReason: '',
       }
     }
   }
@@ -310,6 +432,9 @@ export async function generateEmail(params: {
 
   if (onlySEO && rich!.seo) {
     const seo = rich!.seo
+    const contactRec = seo.contactRecommendation ?? 'yes'
+    const contactReason = seo.contactReason || ''
+
     // SEO-only mode: proposal to win/beat their team — NEVER list technical problems
     prompt = `You are writing a cold outreach email for an SEO agency pitching to a small business.
 
@@ -317,19 +442,22 @@ Business: ${params.businessName}
 City: ${params.city || 'unknown'}
 Industry: ${params.niche || 'unknown'}
 Website: ${params.websiteUrl || 'unknown'}
-Their SEO score: ${seo.score}/100
+Their SEO health score: ${seo.score}/100
+Contact recommendation: ${contactRec}
+Why this is a good prospect: ${contactReason}
 ${isFollowUp ? followUpContext : ''}
 
-IMPORTANT RULES for this SEO pitch:
-- Do NOT list any SEO problems, missing tags, or technical issues — they will just fix it themselves
-- Instead, position our agency as experts who will OUTPERFORM their current SEO situation
-- Focus on RESULTS: rankings, traffic growth, leads from search, beating competitors
-- Imply you spotted a competitive opportunity — do not reveal what it is
-- Frame it as "here is what growth you are leaving on the table" not "here is what is broken"
-- If they have an SEO team already, position us as being able to outperform them
-- Low-pressure CTA — a genuine question, not "book a call"
+STRICT RULES — read carefully:
+- Do NOT list their specific SEO problems, missing tags, broken signals, or technical issues — they will fix it themselves and not need us
+- Do NOT say things like "your website is missing X" or "your site has Y problem"
+- DO position our agency as experts who can OUTPERFORM their current SEO situation or competitors
+- DO focus on OUTCOMES: more leads from Google, beating competitors in search, growing non-branded traffic
+- DO imply you spotted a competitive gap or opportunity — be vague about the specifics
+- Frame it as: "we found an opportunity in your market" NOT "we found problems on your site"
+- If their score is low (${seo.score < 40 ? 'it is — ' + seo.score + '/100' : 'consider their competitive position'}), the opportunity for growth is large — make that compelling
+- Use a low-pressure CTA — a curious question like "would it be worth a quick look?"
 - Max ${isFollowUp ? '70' : '130'} words
-- Conversational, confident tone — not salesy
+- Conversational and confident — not desperate or salesy
 - Sender: ${params.senderName || 'the team'}${sigBlock}
 
 Respond ONLY with valid JSON:

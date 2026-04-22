@@ -445,21 +445,45 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   {/* SEO section */}
                   {rich.seo && (
                     <div className="rounded-lg border border-border overflow-hidden">
+                      {/* Header */}
                       <div className="flex items-center justify-between px-3 py-2 bg-surface-2 border-b border-border">
                         <div className="flex items-center gap-2">
                           <Search className="w-3.5 h-3.5 text-text-3" />
                           <span className="text-xs font-semibold text-text-1 uppercase tracking-wide">SEO Analysis</span>
                         </div>
-                        <span className="text-xs text-text-3">{rich.seo.score}/100</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-text-3">{rich.seo.score}/100</span>
+                          {/* Contact recommendation badge */}
+                          <span className={cn(
+                            'px-2 py-0.5 rounded-full text-xs font-medium',
+                            rich.seo.contactRecommendation === 'yes' ? 'bg-emerald-400/15 text-emerald-400 border border-emerald-400/25' :
+                            rich.seo.contactRecommendation === 'avoid' ? 'bg-red-400/15 text-red-400 border border-red-400/25' :
+                            'bg-amber-400/15 text-amber-400 border border-amber-400/25',
+                          )}>
+                            {rich.seo.contactRecommendation === 'yes' ? 'Contact' :
+                             rich.seo.contactRecommendation === 'avoid' ? 'Skip' : 'Low priority'}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Quick signals grid */}
+                      {/* Contact reason */}
+                      {rich.seo.contactReason && (
+                        <div className="px-3 py-2 border-b border-border bg-surface-2/50">
+                          <p className="text-xs text-text-3 italic">{rich.seo.contactReason}</p>
+                        </div>
+                      )}
+
+                      {/* Technical signal checklist */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-y divide-border border-b border-border">
                         {[
-                          { label: 'Title', ok: rich.seo.hasTitle, detail: rich.seo.titleLength ? `${rich.seo.titleLength} chars` : 'missing' },
-                          { label: 'Meta Desc', ok: rich.seo.hasMetaDescription, detail: rich.seo.metaDescriptionLength ? `${rich.seo.metaDescriptionLength} chars` : 'missing' },
-                          { label: 'Schema', ok: rich.seo.hasSchemaMarkup, detail: rich.seo.schemaTypes.length > 0 ? rich.seo.schemaTypes.slice(0, 2).join(', ') : 'none' },
+                          { label: 'HTTPS', ok: rich.seo.hasHTTPS, detail: rich.seo.hasHTTPS ? 'enabled' : 'missing!' },
+                          { label: 'robots.txt', ok: rich.seo.hasRobotsTxt && !rich.seo.robotsBlocksAll, detail: rich.seo.robotsBlocksAll ? 'blocking all!' : rich.seo.hasRobotsTxt ? 'present' : 'missing' },
+                          { label: 'Sitemap', ok: rich.seo.hasSitemap, detail: rich.seo.hasSitemap ? 'found' : 'not found' },
+                          { label: 'noindex', ok: !rich.seo.hasNoindex, detail: rich.seo.hasNoindex ? 'ACTIVE — blocked!' : 'not set' },
                           { label: 'Canonical', ok: rich.seo.hasCanonical, detail: rich.seo.hasCanonical ? 'present' : 'missing' },
+                          { label: 'Schema', ok: rich.seo.hasSchemaMarkup, detail: rich.seo.schemaTypes.length > 0 ? rich.seo.schemaTypes.slice(0, 2).join(', ') : 'none' },
+                          { label: 'Title', ok: rich.seo.hasTitle && rich.seo.titleLength >= 30 && rich.seo.titleLength <= 65, detail: rich.seo.titleLength ? `${rich.seo.titleLength} chars` : 'missing' },
+                          { label: 'Meta Desc', ok: rich.seo.hasMetaDescription && rich.seo.metaDescriptionLength >= 100, detail: rich.seo.metaDescriptionLength ? `${rich.seo.metaDescriptionLength} chars` : 'missing' },
                         ].map(({ label, ok, detail }) => (
                           <div key={label} className="px-3 py-2">
                             <div className="flex items-center gap-1.5 mb-0.5">
@@ -474,33 +498,75 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                       </div>
 
                       {/* Structural counts */}
-                      <div className="flex items-center gap-4 px-3 py-2 border-b border-border text-xs text-text-2">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 border-b border-border text-xs text-text-2">
                         <span>H1: <strong className={cn(rich.seo.h1Count === 1 ? 'text-emerald-400' : 'text-amber-400')}>{rich.seo.h1Count}</strong></span>
                         <span>H2: <strong className="text-text-1">{rich.seo.h2Count}</strong></span>
+                        <span>H3: <strong className="text-text-1">{rich.seo.h3Count}</strong></span>
                         <span>~{rich.seo.estimatedWordCount.toLocaleString()} words</span>
+                        <span>Internal links: {rich.seo.internalLinksCount}</span>
                         {rich.seo.imagesWithoutAlt > 0 && (
-                          <span className="text-amber-400">{rich.seo.imagesWithoutAlt} images missing alt</span>
+                          <span className="text-amber-400">{rich.seo.imagesWithoutAlt} img missing alt</span>
                         )}
+                        {rich.seo.cleanUrls
+                          ? <span className="text-emerald-400">Clean URLs</span>
+                          : <span className="text-amber-400">URL issues</span>}
                       </div>
 
-                      {/* Issues & strengths */}
-                      <div className="divide-y divide-border">
-                        {rich.seo.issues.map((issue, i) => (
-                          <div key={i} className="flex items-start gap-2 px-3 py-2.5">
-                            <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
-                            <span className="text-xs text-text-2 leading-relaxed">{issue}</span>
+                      {/* 7-category breakdown */}
+                      {(() => {
+                        const cats = [
+                          { key: 'technical', label: 'Technical', data: rich.seo.technical },
+                          { key: 'onPage', label: 'On-Page', data: rich.seo.onPage },
+                          { key: 'content', label: 'Content', data: rich.seo.content },
+                          { key: 'backlinks', label: 'Backlinks', data: rich.seo.backlinks },
+                          { key: 'trafficRankings', label: 'Traffic & Rankings', data: rich.seo.trafficRankings },
+                          { key: 'competitorGap', label: 'Competitor Gap', data: rich.seo.competitorGap },
+                          { key: 'conversion', label: 'Conversion', data: rich.seo.conversion },
+                        ] as const
+                        return (
+                          <div className="divide-y divide-border">
+                            {cats.map(({ key, label, data }) => (
+                              <div key={key} className="px-3 py-2.5">
+                                <div className="flex items-center gap-3 mb-1.5">
+                                  <span className="text-xs font-medium text-text-1 w-32 shrink-0">{label}</span>
+                                  <div className="flex-1 h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                                    <div
+                                      className={cn('h-full rounded-full', SCORE_COLOR(data.score))}
+                                      style={{ width: `${data.score}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-text-3 w-8 text-right">{data.score}</span>
+                                </div>
+                                {data.issues.length > 0 && (
+                                  <ul className="space-y-0.5 ml-32">
+                                    {data.issues.map((issue, i) => (
+                                      <li key={i} className="flex items-start gap-1.5 text-xs text-text-3">
+                                        <span className="text-red-400 shrink-0 mt-0.5">›</span>
+                                        {issue}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                        {rich.seo.strengths.map((strength, i) => (
-                          <div key={i} className="flex items-start gap-2 px-3 py-2.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                            <span className="text-xs text-text-2 leading-relaxed">{strength}</span>
-                          </div>
-                        ))}
-                        {rich.seo.issues.length === 0 && rich.seo.strengths.length === 0 && (
-                          <p className="px-3 py-2 text-xs text-text-3">No specific SEO signals identified.</p>
-                        )}
-                      </div>
+                        )
+                      })()}
+
+                      {/* Strengths */}
+                      {rich.seo.strengths.length > 0 && (
+                        <div className="px-3 py-2.5 border-t border-border bg-emerald-400/5">
+                          <p className="text-xs font-medium text-emerald-400 mb-1">Strengths</p>
+                          <ul className="space-y-0.5">
+                            {rich.seo.strengths.map((s, i) => (
+                              <li key={i} className="flex items-start gap-1.5 text-xs text-text-2">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
+                                {s}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
