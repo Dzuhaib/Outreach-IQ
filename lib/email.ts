@@ -1,4 +1,3 @@
-import nodemailer from 'nodemailer'
 import { google } from 'googleapis'
 import { prisma } from './db'
 
@@ -11,7 +10,17 @@ function getOAuth2Client() {
   )
 }
 
-async function getTransporter(): Promise<nodemailer.Transporter> {
+interface SendEmailParams {
+  to: string
+  subject: string
+  body: string
+}
+
+/**
+ * Sends via Gmail REST API using stored OAuth2 tokens.
+ * More reliable than nodemailer SMTP OAuth2 — no SMTP auth errors.
+ */
+export async function sendEmail(params: SendEmailParams): Promise<void> {
   const settings = await prisma.settings.findFirst()
 
   if (!settings?.googleRefreshToken || !settings?.googleEmail) {
@@ -21,42 +30,27 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
   const oauth2Client = getOAuth2Client()
   oauth2Client.setCredentials({
     refresh_token: settings.googleRefreshToken,
-    access_token: settings.googleAccessToken,
   })
 
-  // Get a fresh access token (auto-refreshes if expired)
-  const { token } = await oauth2Client.getAccessToken()
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+  const fromName = settings.senderName || 'Outreach'
+  const fromEmail = settings.googleEmail
 
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      type: 'OAuth2',
-      user: settings.googleEmail,
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      refreshToken: settings.googleRefreshToken,
-      accessToken: token || settings.googleAccessToken || '',
-    },
-  })
-}
+  // Build RFC 2822 message
+  const messageParts = [
+    `From: "${fromName}" <${fromEmail}>`,
+    `To: ${params.to}`,
+    `Subject: ${params.subject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/plain; charset=utf-8`,
+    ``,
+    params.body,
+  ]
+  const raw = Buffer.from(messageParts.join('\n')).toString('base64url')
 
-export async function sendEmail(params: {
-  to: string
-  subject: string
-  body: string
-}): Promise<void> {
-  const settings = await prisma.settings.findFirst()
-  const transporter = await getTransporter()
-
-  const fromName = settings?.senderName || 'Outreach'
-  const fromEmail = settings?.googleEmail || ''
-
-  await transporter.sendMail({
-    from: `"${fromName}" <${fromEmail}>`,
-    to: params.to,
-    subject: params.subject,
-    text: params.body,
-    html: params.body.replace(/\n/g, '<br>'),
+  await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw },
   })
 }
 
@@ -69,8 +63,12 @@ export async function verifyGmail(): Promise<string> {
   }
 
   const oauth2Client = getOAuth2Client()
-  oauth2Client.setCredentials({ refresh_token: settings.googleRefreshToken })
+  oauth2Client.setCredentials({
+    refresh_token: settings.googleRefreshToken,
+  })
 
-  await oauth2Client.getAccessToken() // throws if refresh token is revoked
-  return settings.googleEmail
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+  const profile = await gmail.users.getProfile({ userId: 'me' })
+
+  return profile.data.emailAddress || settings.googleEmail
 }
