@@ -1,18 +1,45 @@
 generator client {
   provider      = "prisma-client-js"
-  // rhel target is required for Vercel's Linux runtime
   binaryTargets = ["native", "rhel-openssl-1.0.x"]
 }
 
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  // Neon uses a non-pooled URL for migrations, pooled for runtime queries
   directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  googleEmail        String    @unique
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleTokenExpiry  DateTime?
+  openaiKey          String?
+  openaiModel        String?
+  senderName         String?
+  signature          String?
+  followUpDay3       Int       @default(3)
+  followUpDay7       Int       @default(7)
+  leads              Lead[]
+  sessions           Session[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model Lead {
   id           String    @id @default(cuid())
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   businessName String
   websiteUrl   String?
   city         String?
@@ -20,7 +47,6 @@ model Lead {
   email        String?
   status       String    @default("NEW")
   notes        String?
-  // JSON string: { summary, painPoints, score }
   analysis     String?
   archivedAt   DateTime?
   createdAt    DateTime  @default(now())
@@ -40,24 +66,4 @@ model Email {
   openCount Int       @default(0)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-}
-
-model Settings {
-  id                 String    @id @default(cuid())
-  // Google OAuth — used to send emails via Gmail
-  googleEmail        String?
-  googleAccessToken  String?
-  googleRefreshToken String?
-  googleTokenExpiry  DateTime?
-  // OpenAI
-  openaiKey          String?
-  openaiModel        String?
-  // Sender identity
-  senderName         String?
-  signature          String?
-  // Follow-up timing (days after initial send)
-  followUpDay3       Int       @default(3)
-  followUpDay7       Int       @default(7)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
 }

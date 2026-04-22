@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { generateEmail } from '@/lib/ai'
+import { requireUser } from '@/lib/session'
 import type { EmailType, WebsiteAnalysis, RichAnalysis } from '@/lib/types'
 
 // Allow up to 30s for OpenAI email generation
@@ -10,10 +11,11 @@ type Params = Promise<{ id: string }>
 
 export async function POST(request: Request, { params }: { params: Params }) {
   try {
+    const user = await requireUser()
     const { id } = await params
     const { type = 'INITIAL' } = await request.json() as { type?: EmailType }
 
-    const lead = await prisma.lead.findUnique({ where: { id } })
+    const lead = await prisma.lead.findFirst({ where: { id, userId: user.id } })
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     if (!lead.analysis) {
       return NextResponse.json(
@@ -22,7 +24,6 @@ export async function POST(request: Request, { params }: { params: Params }) {
       )
     }
 
-    const settings = await prisma.settings.findFirst()
     const analysis: WebsiteAnalysis | RichAnalysis = JSON.parse(lead.analysis)
 
     const { subject, body } = await generateEmail({
@@ -32,11 +33,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
       websiteUrl: lead.websiteUrl,
       analysis,
       type,
-      senderName: settings?.senderName || null,
-      signature: settings?.signature || null,
+      senderName: user.senderName,
+      signature: user.signature,
+      userId: user.id,
     })
 
-    // Replace existing draft of this type if it hasn't been sent yet
     const existing = await prisma.email.findFirst({
       where: { leadId: id, type, sentAt: null },
     })
@@ -54,16 +55,18 @@ export async function POST(request: Request, { params }: { params: Params }) {
     }
 
     return NextResponse.json(email)
-  } catch (err) {
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Email generation failed' },
-      { status: 500 },
+      { status },
     )
   }
 }
 
 export async function PUT(request: Request, { params }: { params: Params }) {
   try {
+    const user = await requireUser()
     const { id } = await params
     const { emailId, subject, body } = await request.json() as {
       emailId: string
@@ -75,6 +78,9 @@ export async function PUT(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: 'emailId, subject, and body are required' }, { status: 400 })
     }
 
+    const lead = await prisma.lead.findFirst({ where: { id, userId: user.id } })
+    if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
     const email = await prisma.email.findFirst({ where: { id: emailId, leadId: id } })
     if (!email) return NextResponse.json({ error: 'Email not found' }, { status: 404 })
     if (email.sentAt) return NextResponse.json({ error: 'Cannot edit a sent email' }, { status: 400 })
@@ -85,10 +91,11 @@ export async function PUT(request: Request, { params }: { params: Params }) {
     })
 
     return NextResponse.json(updated)
-  } catch (err) {
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Update failed' },
-      { status: 500 },
+      { status },
     )
   }
 }

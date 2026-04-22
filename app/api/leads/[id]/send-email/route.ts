@@ -1,17 +1,19 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
+import { requireUser } from '@/lib/session'
 
 type Params = Promise<{ id: string }>
 
 export async function POST(request: Request, { params }: { params: Params }) {
   try {
+    const user = await requireUser()
     const { id } = await params
     const { emailId } = await request.json() as { emailId: string }
 
     if (!emailId) return NextResponse.json({ error: 'emailId is required' }, { status: 400 })
 
-    const lead = await prisma.lead.findUnique({ where: { id } })
+    const lead = await prisma.lead.findFirst({ where: { id, userId: user.id } })
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     if (!lead.email) {
       return NextResponse.json({ error: 'This lead has no email address' }, { status: 400 })
@@ -21,14 +23,10 @@ export async function POST(request: Request, { params }: { params: Params }) {
     if (!email) return NextResponse.json({ error: 'Email not found' }, { status: 404 })
     if (email.sentAt) return NextResponse.json({ error: 'This email has already been sent' }, { status: 400 })
 
-    await sendEmail({ to: lead.email, subject: email.subject, body: email.body, emailId })
+    await sendEmail({ to: lead.email, subject: email.subject, body: email.body, emailId, userId: user.id })
 
     const now = new Date()
-
-    // Update email and lead status atomically
-    const newLeadStatus =
-      email.type === 'INITIAL' ? 'EMAIL_SENT' :
-      'FOLLOWED_UP'
+    const newLeadStatus = email.type === 'INITIAL' ? 'EMAIL_SENT' : 'FOLLOWED_UP'
 
     await prisma.$transaction([
       prisma.email.update({ where: { id: emailId }, data: { sentAt: now } }),
@@ -36,10 +34,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
     ])
 
     return NextResponse.json({ success: true, sentAt: now.toISOString() })
-  } catch (err) {
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to send email' },
-      { status: 500 },
+      { status },
     )
   }
 }

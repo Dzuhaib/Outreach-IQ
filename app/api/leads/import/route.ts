@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { prisma } from '@/lib/db'
+import { requireUser } from '@/lib/session'
 
 type RawRow = Record<string, string | number | boolean | null | undefined>
 
-/** Normalize a header key to lowercase no-spaces for fuzzy matching */
 function normalizeKey(key: string): string {
   return String(key).toLowerCase().replace(/[\s_\-]+/g, '')
 }
 
-/** Pick the first matching value from a row by trying multiple key variants */
 function pick(row: RawRow, ...candidates: string[]): string | null {
   const normalized = Object.fromEntries(
     Object.entries(row).map(([k, v]) => [normalizeKey(k), v]),
@@ -33,7 +32,6 @@ function normalizeRow(row: RawRow) {
   }
 }
 
-/** Parse CSV text into rows */
 function parseCSV(text: string): RawRow[] {
   const lines = text.trim().split(/\r?\n/)
   if (lines.length < 2) return []
@@ -71,7 +69,6 @@ function splitCSVLine(line: string): string[] {
   return result
 }
 
-/** Parse XLSX/XLS buffer into rows */
 function parseXLSX(buffer: ArrayBuffer): RawRow[] {
   const workbook = XLSX.read(buffer, { type: 'array' })
   const sheetName = workbook.SheetNames[0]
@@ -82,6 +79,7 @@ function parseXLSX(buffer: ArrayBuffer): RawRow[] {
 
 export async function POST(request: Request) {
   try {
+    const user = await requireUser()
     const formData = await request.formData()
     const file = formData.get('file') as File | null
 
@@ -121,6 +119,7 @@ export async function POST(request: Request) {
       try {
         await prisma.lead.create({
           data: {
+            userId: user.id,
             businessName: norm.businessName,
             websiteUrl: norm.websiteUrl || null,
             city: norm.city || null,
@@ -136,10 +135,11 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ created, errors })
-  } catch (err) {
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Import failed' },
-      { status: 500 },
+      { status },
     )
   }
 }

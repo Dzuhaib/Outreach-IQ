@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireUser } from '@/lib/session'
 import type { WebsiteAnalysis } from '@/lib/types'
 
 type Params = Promise<{ id: string }>
@@ -16,23 +17,35 @@ function parseLead(lead: {
   return { ...lead, analysis: parsed }
 }
 
+async function getOwnedLead(userId: string, id: string) {
+  const lead = await prisma.lead.findFirst({ where: { id, userId } })
+  return lead
+}
+
 export async function GET(_: Request, { params }: { params: Params }) {
   try {
+    const user = await requireUser()
     const { id } = await params
-    const lead = await prisma.lead.findUnique({
-      where: { id },
+    const lead = await prisma.lead.findFirst({
+      where: { id, userId: user.id },
       include: { emails: { orderBy: { createdAt: 'asc' } } },
     })
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     return NextResponse.json(parseLead(lead))
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status })
   }
 }
 
 export async function PUT(request: Request, { params }: { params: Params }) {
   try {
+    const user = await requireUser()
     const { id } = await params
+
+    const owned = await getOwnedLead(user.id, id)
+    if (!owned) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
     const body = await request.json() as Record<string, unknown>
 
     const updatable: Record<string, unknown> = {}
@@ -55,17 +68,24 @@ export async function PUT(request: Request, { params }: { params: Params }) {
     })
 
     return NextResponse.json(parseLead(lead))
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status })
   }
 }
 
 export async function DELETE(_: Request, { params }: { params: Params }) {
   try {
+    const user = await requireUser()
     const { id } = await params
+
+    const owned = await getOwnedLead(user.id, id)
+    if (!owned) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
     await prisma.lead.delete({ where: { id } })
     return NextResponse.json({ success: true })
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status })
   }
 }

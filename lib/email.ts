@@ -14,37 +14,30 @@ interface SendEmailParams {
   to: string
   subject: string
   body: string
-  emailId: string  // used to embed the tracking pixel
+  emailId: string
+  userId: string
 }
 
-/**
- * Sends via Gmail REST API using stored OAuth2 tokens.
- * Embeds a 1×1 tracking pixel so we know when the email is opened.
- */
 export async function sendEmail(params: SendEmailParams): Promise<void> {
-  const settings = await prisma.settings.findFirst()
+  const user = await prisma.user.findUnique({ where: { id: params.userId } })
 
-  if (!settings?.googleRefreshToken || !settings?.googleEmail) {
+  if (!user?.googleRefreshToken || !user?.googleEmail) {
     throw new Error('Gmail not connected. Please connect your Google account in Settings.')
   }
 
   const oauth2Client = getOAuth2Client()
-  oauth2Client.setCredentials({ refresh_token: settings.googleRefreshToken })
+  oauth2Client.setCredentials({ refresh_token: user.googleRefreshToken })
 
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
-  const fromName = settings.senderName || 'Outreach'
-  const fromEmail = settings.googleEmail
+  const fromName = user.senderName || 'Outreach'
+  const fromEmail = user.googleEmail
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
-  // Plain-text body
   const textBody = params.body
-
-  // HTML body with tracking pixel appended
   const htmlBody = `<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#333;">${
     params.body.replace(/\n/g, '<br>')
   }</div><img src="${appUrl}/api/track/open/${params.emailId}" width="1" height="1" style="display:none;border:0;" alt="" />`
 
-  // Build a multipart/alternative MIME message so clients get text or HTML
   const boundary = `boundary_${Date.now()}`
   const messageParts = [
     `From: "${fromName}" <${fromEmail}>`,
@@ -70,18 +63,17 @@ export async function sendEmail(params: SendEmailParams): Promise<void> {
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
 }
 
-/** Verifies the stored Gmail credentials are still valid */
-export async function verifyGmail(): Promise<string> {
-  const settings = await prisma.settings.findFirst()
+export async function verifyGmail(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
 
-  if (!settings?.googleRefreshToken || !settings?.googleEmail) {
+  if (!user?.googleRefreshToken || !user?.googleEmail) {
     throw new Error('Gmail not connected')
   }
 
   const oauth2Client = getOAuth2Client()
-  oauth2Client.setCredentials({ refresh_token: settings.googleRefreshToken })
+  oauth2Client.setCredentials({ refresh_token: user.googleRefreshToken })
 
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
   const profile = await gmail.users.getProfile({ userId: 'me' })
-  return profile.data.emailAddress || settings.googleEmail
+  return profile.data.emailAddress || user.googleEmail
 }

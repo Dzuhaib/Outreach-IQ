@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Check, AlertCircle, Eye, EyeOff, Mail, Wifi,
-  LogIn, LogOut, Cpu,
+  LogIn, LogOut, Cpu, User,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -134,9 +134,28 @@ function SettingsContent() {
 
   return (
     <div className="p-8 max-w-2xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-1 tracking-tight">Settings</h1>
-        <p className="text-sm text-text-2 mt-1">Configure your AI and Gmail credentials</p>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-1 tracking-tight">Settings</h1>
+          <p className="text-sm text-text-2 mt-1">Configure your AI and Gmail credentials</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {gmailEmail && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-surface border border-border rounded-lg">
+              <User className="w-3.5 h-3.5 text-text-3" />
+              <span className="text-xs text-text-2">{gmailEmail}</span>
+            </div>
+          )}
+          <form action="/api/auth/logout" method="POST">
+            <button
+              type="submit"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-2 hover:text-text-1 bg-surface border border-border rounded-lg hover:border-border-hover transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* OAuth notice banner */}

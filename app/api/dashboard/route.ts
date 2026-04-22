@@ -1,17 +1,24 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireUser } from '@/lib/session'
 import { ALL_STATUSES } from '@/lib/utils'
 import type { LeadStatus } from '@/lib/types'
 
 export async function GET() {
   try {
+    const user = await requireUser()
+    const userId = user.id
+
     const [leads, sentEmails, openedEmails, leadsWithOpens] = await Promise.all([
-      prisma.lead.findMany({ select: { status: true } }),
-      prisma.email.count({ where: { sentAt: { not: null } } }),
-      prisma.email.count({ where: { openedAt: { not: null } } }),
-      // Count of unique leads that have at least one opened email
+      prisma.lead.findMany({ where: { userId }, select: { status: true } }),
+      prisma.email.count({
+        where: { sentAt: { not: null }, lead: { userId } },
+      }),
+      prisma.email.count({
+        where: { openedAt: { not: null }, lead: { userId } },
+      }),
       prisma.lead.count({
-        where: { emails: { some: { openedAt: { not: null } } } },
+        where: { userId, emails: { some: { openedAt: { not: null } } } },
       }),
     ])
 
@@ -40,7 +47,8 @@ export async function GET() {
       byStatus,
       leadsWithOpens,
     })
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status })
   }
 }

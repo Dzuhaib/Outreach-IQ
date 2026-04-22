@@ -1,20 +1,21 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-
-const SETTINGS_ID = 'singleton'
+import { getSessionUser } from '@/lib/session'
 
 export async function POST() {
   try {
-    await prisma.settings.upsert({
-      where: { id: SETTINGS_ID },
-      update: {
-        googleEmail: null,
+    const user = await getSessionUser()
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
         googleAccessToken: null,
         googleRefreshToken: null,
         googleTokenExpiry: null,
       },
-      create: { id: SETTINGS_ID },
     })
+
     return NextResponse.json({ success: true })
   } catch (err) {
     return NextResponse.json(

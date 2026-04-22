@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Space_Grotesk } from 'next/font/google'
+import { cookies } from 'next/headers'
 import './globals.css'
 import { Sidebar } from '@/components/layout/Sidebar'
 
@@ -14,11 +15,14 @@ export const metadata: Metadata = {
   description: 'AI-powered lead management and cold outreach system',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies()
+  const isAuthenticated = !!cookieStore.get('sid')?.value
+
   return (
     <html lang="en" className={spaceGrotesk.variable}>
       <body className="bg-bg text-text-1 font-sans flex h-screen overflow-hidden">
-        <Sidebar />
+        {isAuthenticated && <Sidebar />}
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>

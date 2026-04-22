@@ -1,22 +1,28 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-
-const SETTINGS_ID = 'singleton'
+import { requireUser } from '@/lib/session'
 
 export async function GET() {
   try {
-    let settings = await prisma.settings.findFirst()
-    if (!settings) {
-      settings = await prisma.settings.create({ data: { id: SETTINGS_ID } })
-    }
-    return NextResponse.json(settings)
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+    const user = await requireUser()
+    return NextResponse.json({
+      googleEmail: user.googleEmail,
+      openaiKey: user.openaiKey,
+      openaiModel: user.openaiModel,
+      senderName: user.senderName,
+      signature: user.signature,
+      followUpDay3: user.followUpDay3,
+      followUpDay7: user.followUpDay7,
+    })
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status })
   }
 }
 
 export async function PUT(request: Request) {
   try {
+    const user = await requireUser()
     const body = await request.json() as Record<string, unknown>
 
     const data: Record<string, unknown> = {}
@@ -27,14 +33,11 @@ export async function PUT(request: Request) {
     if ('followUpDay3' in body) data.followUpDay3 = Number(body.followUpDay3) || 3
     if ('followUpDay7' in body) data.followUpDay7 = Number(body.followUpDay7) || 7
 
-    const settings = await prisma.settings.upsert({
-      where: { id: SETTINGS_ID },
-      update: data,
-      create: { id: SETTINGS_ID, ...data },
-    })
+    await prisma.user.update({ where: { id: user.id }, data })
 
-    return NextResponse.json(settings)
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+    return NextResponse.json({ success: true })
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status || 500
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status })
   }
 }

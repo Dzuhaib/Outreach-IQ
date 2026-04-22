@@ -6,11 +6,11 @@ import type {
   ChatbotResult, WebsiteResult, SEOResult, PainPoint,
 } from './types'
 
-async function getClient(): Promise<{ client: OpenAI; model: string }> {
-  const settings = await prisma.settings.findFirst()
-  const apiKey = settings?.openaiKey || process.env.OPENAI_API_KEY
+async function getClient(userId: string): Promise<{ client: OpenAI; model: string }> {
+  const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null
+  const apiKey = user?.openaiKey || process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('OpenAI API key not configured. Please add it in Settings.')
-  const model = settings?.openaiModel || DEFAULT_OPENAI_MODEL
+  const model = user?.openaiModel || DEFAULT_OPENAI_MODEL
   return { client: new OpenAI({ apiKey }), model }
 }
 
@@ -311,8 +311,9 @@ export async function analyzeWebsite(
   url: string,
   businessName: string,
   types: AnalysisType[] = ['chatbot', 'website', 'seo'],
+  userId?: string,
 ): Promise<RichAnalysis> {
-  const { client, model } = await getClient()
+  const { client, model } = await getClient(userId || '')
 
   let html = ''
   try {
@@ -411,8 +412,9 @@ export async function generateEmail(params: {
   type: 'INITIAL' | 'FOLLOW_UP_3' | 'FOLLOW_UP_7'
   senderName: string | null
   signature: string | null
+  userId?: string
 }): Promise<{ subject: string; body: string }> {
-  const { client, model } = await getClient()
+  const { client, model } = await getClient(params.userId || '')
 
   const isFollowUp = params.type !== 'INITIAL'
   const followUpContext =
