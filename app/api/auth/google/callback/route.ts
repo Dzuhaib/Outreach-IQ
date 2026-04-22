@@ -46,6 +46,12 @@ export async function GET(request: Request) {
       },
     })
 
+    // Claim any orphaned leads (created before auth was added)
+    await prisma.lead.updateMany({
+      where: { userId: null },
+      data: { userId: user.id },
+    })
+
     // Create a new 30-day session
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
     const session = await prisma.session.create({
