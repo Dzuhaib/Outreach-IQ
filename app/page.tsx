@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Users, Mail, MessageSquare, TrendingUp, ArrowRight, BarChart3,
+  Users, Mail, MessageSquare, TrendingUp, ArrowRight, BarChart3, Eye,
 } from 'lucide-react'
 import { StatsCard } from '@/components/dashboard/StatsCard'
 import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge'
@@ -47,7 +47,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatsCard
           title="Total Leads"
           value={stats?.totalLeads ?? 0}
@@ -58,6 +58,12 @@ export default function DashboardPage() {
           title="Emails Sent"
           value={stats?.emailsSent ?? 0}
           icon={Mail}
+        />
+        <StatsCard
+          title="Open Rate"
+          value={stats ? `${stats.openRate}%` : '0%'}
+          subtitle={`${stats?.emailsOpened ?? 0} opened`}
+          icon={Eye}
         />
         <StatsCard
           title="Reply Rate"

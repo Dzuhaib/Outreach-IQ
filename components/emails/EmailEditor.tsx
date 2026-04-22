@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw, Send, Check, Edit3 } from 'lucide-react'
+import { RefreshCw, Send, Check, Edit3, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
@@ -37,6 +37,7 @@ export function EmailEditor({
   const [saving, setSaving] = useState(false)
 
   const isSent = !!emailRecord.sentAt
+  const isOpened = !!emailRecord.openedAt
   const isGenerating = generatingType === type
   const isSending = sendingId === emailRecord.id
 
@@ -66,6 +67,13 @@ export function EmailEditor({
             <span className="flex items-center gap-1 text-xs text-emerald-400">
               <Check className="w-3 h-3" />
               Sent {formatDateTime(emailRecord.sentAt!)}
+            </span>
+          )}
+          {isOpened && (
+            <span className="flex items-center gap-1 text-xs text-blue-400 bg-blue-400/10 border border-blue-400/20 px-2 py-0.5 rounded-full">
+              <Eye className="w-3 h-3" />
+              Opened
+              {emailRecord.openCount > 1 && ` · ${emailRecord.openCount}×`}
             </span>
           )}
         </div>

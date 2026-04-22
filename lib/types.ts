@@ -28,6 +28,8 @@ export interface EmailRecord {
   body: string
   type: EmailType
   sentAt: string | null
+  openedAt: string | null
+  openCount: number
   createdAt: string
   updatedAt: string
 }
@@ -78,6 +80,8 @@ export interface Settings {
 export interface DashboardStats {
   totalLeads: number
   emailsSent: number
+  emailsOpened: number
+  openRate: number
   replied: number
   converted: number
   replyRate: number

@@ -5,9 +5,10 @@ import type { LeadStatus } from '@/lib/types'
 
 export async function GET() {
   try {
-    const [leads, sentEmails] = await Promise.all([
+    const [leads, sentEmails, openedEmails] = await Promise.all([
       prisma.lead.findMany({ select: { status: true } }),
       prisma.email.count({ where: { sentAt: { not: null } } }),
+      prisma.email.count({ where: { openedAt: { not: null } } }),
     ])
 
     const byStatus = ALL_STATUSES.reduce<Record<LeadStatus, number>>(
@@ -26,6 +27,8 @@ export async function GET() {
     return NextResponse.json({
       totalLeads: total,
       emailsSent: sentEmails,
+      emailsOpened: openedEmails,
+      openRate: sentEmails > 0 ? Math.round((openedEmails / sentEmails) * 100) : 0,
       replied,
       converted,
       replyRate: total > 0 ? Math.round((replied / total) * 100) : 0,
