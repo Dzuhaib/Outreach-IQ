@@ -1,0 +1,61 @@
+generator client {
+  provider      = "prisma-client-js"
+  // rhel target is required for Vercel's Linux runtime
+  binaryTargets = ["native", "rhel-openssl-1.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Neon uses a non-pooled URL for migrations, pooled for runtime queries
+  directUrl = env("DIRECT_URL")
+}
+
+model Lead {
+  id           String    @id @default(cuid())
+  businessName String
+  websiteUrl   String?
+  city         String?
+  niche        String?
+  email        String?
+  status       String    @default("NEW")
+  notes        String?
+  // JSON string: { summary, painPoints, score }
+  analysis     String?
+  archivedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  emails       Email[]
+}
+
+model Email {
+  id        String    @id @default(cuid())
+  leadId    String
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  subject   String
+  body      String
+  type      String    @default("INITIAL")
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Settings {
+  id                 String    @id @default(cuid())
+  // Google OAuth — used to send emails via Gmail
+  googleEmail        String?
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleTokenExpiry  DateTime?
+  // OpenAI
+  openaiKey          String?
+  openaiModel        String?
+  // Sender identity
+  senderName         String?
+  signature          String?
+  // Follow-up timing (days after initial send)
+  followUpDay3       Int       @default(3)
+  followUpDay7       Int       @default(7)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
