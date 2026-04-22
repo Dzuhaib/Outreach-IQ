@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Plus, Upload, Search, SlidersHorizontal, X,
   Zap, Send, CheckSquare,
@@ -16,7 +17,10 @@ import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { ALL_STATUSES, STATUS_LABELS, sleep } from '@/lib/utils'
 import type { LeadListItem, LeadStatus, Lead, AnalysisType } from '@/lib/types'
 
-export default function LeadsPage() {
+function LeadsPage() {
+  const searchParams = useSearchParams()
+  const openedOnly = searchParams.get('opened') === 'true'
+
   const [leads, setLeads] = useState<LeadListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -50,6 +54,7 @@ export default function LeadsPage() {
       if (statusFilter) params.set('status', statusFilter)
       if (cityFilter) params.set('city', cityFilter)
       if (nicheFilter) params.set('niche', nicheFilter)
+      if (openedOnly) params.set('opened', 'true')
       const res = await fetch(`/api/leads?${params}`)
       if (!res.ok) throw new Error('Failed to load leads')
       const data = await res.json()
@@ -59,7 +64,7 @@ export default function LeadsPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, statusFilter, cityFilter, nicheFilter])
+  }, [search, statusFilter, cityFilter, nicheFilter, openedOnly])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
 
@@ -96,7 +101,8 @@ export default function LeadsPage() {
     const item: LeadListItem = {
       id: lead.id, businessName: lead.businessName, websiteUrl: lead.websiteUrl,
       city: lead.city, niche: lead.niche, email: lead.email, status: lead.status,
-      archivedAt: lead.archivedAt, createdAt: lead.createdAt, _count: { emails: 0 },
+      archivedAt: lead.archivedAt, createdAt: lead.createdAt,
+      _count: { emails: 0 }, openedEmailCount: 0,
     }
     setLeads((prev) => [item, ...prev])
   }
@@ -254,7 +260,9 @@ export default function LeadsPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-1 tracking-tight">Leads</h1>
+          <h1 className="text-2xl font-bold text-text-1 tracking-tight">
+            {openedOnly ? 'Leads with Opened Emails' : 'Leads'}
+          </h1>
           <p className="text-sm text-text-2 mt-1">
             {leads.length} lead{leads.length !== 1 ? 's' : ''}
             {newLeadsWithUrl > 0 && (
@@ -430,5 +438,16 @@ export default function LeadsPage() {
         />
       )}
     </div>
+  )
+}
+
+// useSearchParams requires a Suspense boundary in Next.js App Router
+import { Suspense } from 'react'
+
+export default function LeadsPageWrapper() {
+  return (
+    <Suspense fallback={<PageLoader text="Loading…" />}>
+      <LeadsPage />
+    </Suspense>
   )
 }

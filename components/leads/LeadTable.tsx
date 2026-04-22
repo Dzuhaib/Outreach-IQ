@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import {
-  ExternalLink, Trash2, Archive, MoreHorizontal, ChevronUp, ChevronDown,
+  ExternalLink, Trash2, Archive, MoreHorizontal, ChevronUp, ChevronDown, Eye,
 } from 'lucide-react'
 import { LeadStatusBadge } from './LeadStatusBadge'
 import { Button } from '@/components/ui/Button'
@@ -170,7 +170,17 @@ export function LeadTable({
                 </td>
                 <td className="px-4 py-3 text-text-3 text-xs">{formatDate(lead.createdAt)}</td>
                 <td className="px-4 py-3 text-center text-text-3 text-xs">
-                  {lead._count.emails > 0 ? <span className="text-text-2">{lead._count.emails}</span> : '—'}
+                  <div className="flex items-center justify-center gap-1.5">
+                    {lead._count.emails > 0
+                      ? <span className="text-text-2">{lead._count.emails}</span>
+                      : <span>—</span>}
+                    {lead.openedEmailCount > 0 && (
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium text-blue-400 bg-blue-400/10 border border-blue-400/20">
+                        <Eye className="w-2.5 h-2.5" />
+                        {lead.openedEmailCount}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3 relative">
                   <button

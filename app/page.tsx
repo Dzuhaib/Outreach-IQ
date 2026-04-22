@@ -64,6 +64,7 @@ export default function DashboardPage() {
           value={stats ? `${stats.openRate}%` : '0%'}
           subtitle={`${stats?.emailsOpened ?? 0} opened`}
           icon={Eye}
+          href="/opened"
         />
         <StatsCard
           title="Reply Rate"
@@ -107,24 +108,26 @@ export default function DashboardPage() {
               )
             })}
 
-            {/* Email opens — not a status but a key pipeline signal */}
-            {(stats?.leadsWithOpens ?? 0) > 0 && (
-              <div className="pt-2 mt-2 border-t border-border">
+            {/* Email opens — always shown, links to /opened */}
+            <div className="pt-2 mt-2 border-t border-border">
+              <Link href="/opened" className="block group">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="flex items-center gap-1.5 text-xs text-blue-400">
+                  <span className="flex items-center gap-1.5 text-xs text-blue-400 group-hover:text-blue-300 transition-colors">
                     <MailOpen className="w-3 h-3" />
                     Email Opened
                   </span>
-                  <span className="text-xs font-medium text-blue-400">{stats!.leadsWithOpens}</span>
+                  <span className="text-xs font-medium text-blue-400 group-hover:text-blue-300 transition-colors">
+                    {stats?.leadsWithOpens ?? 0}
+                  </span>
                 </div>
                 <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                    style={{ width: `${stats!.totalLeads > 0 ? Math.round((stats!.leadsWithOpens / stats!.totalLeads) * 100) : 0}%` }}
+                    style={{ width: `${(stats?.totalLeads ?? 0) > 0 ? Math.round(((stats?.leadsWithOpens ?? 0) / stats!.totalLeads) * 100) : 0}%` }}
                   />
                 </div>
-              </div>
-            )}
+              </Link>
+            </div>
           </div>
         </div>
 

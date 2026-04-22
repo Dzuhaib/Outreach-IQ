@@ -9,6 +9,7 @@ export async function GET(request: Request) {
     const status = searchParams.get('status') as LeadStatus | null
     const city = searchParams.get('city') || ''
     const niche = searchParams.get('niche') || ''
+    const opened = searchParams.get('opened') === 'true'
     const limit = parseInt(searchParams.get('limit') || '200')
 
     const where: Record<string, unknown> = {}
@@ -24,8 +25,10 @@ export async function GET(request: Request) {
     if (status) where.status = status
     if (city) where.city = { contains: city }
     if (niche) where.niche = { contains: niche }
+    // Filter to only leads that have at least one opened email
+    if (opened) where.emails = { some: { openedAt: { not: null } } }
 
-    const leads = await prisma.lead.findMany({
+    const rawLeads = await prisma.lead.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -40,8 +43,19 @@ export async function GET(request: Request) {
         archivedAt: true,
         createdAt: true,
         _count: { select: { emails: true } },
+        emails: {
+          select: { id: true },
+          where: { openedAt: { not: null } },
+        },
       },
     })
+
+    const leads = rawLeads.map(({ emails, createdAt, archivedAt, ...lead }) => ({
+      ...lead,
+      createdAt: createdAt.toISOString(),
+      archivedAt: archivedAt ? archivedAt.toISOString() : null,
+      openedEmailCount: emails.length,
+    }))
 
     return NextResponse.json({ leads })
   } catch (err) {

@@ -152,6 +152,23 @@ export interface LeadListItem {
   archivedAt: string | null
   createdAt: string
   _count: { emails: number }
+  openedEmailCount: number
+}
+
+export interface OpenedEmailItem {
+  id: string
+  subject: string
+  type: EmailType
+  sentAt: string | null
+  openedAt: string
+  openCount: number
+  lead: {
+    id: string
+    businessName: string
+    email: string | null
+    niche: string | null
+    city: string | null
+  }
 }
 
 export interface Settings {

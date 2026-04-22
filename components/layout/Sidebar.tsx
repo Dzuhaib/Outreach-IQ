@@ -8,6 +8,7 @@ import {
   Kanban,
   Settings,
   Zap,
+  MailOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/leads', icon: Users, label: 'Leads' },
   { href: '/pipeline', icon: Kanban, label: 'Pipeline' },
+  { href: '/opened', icon: MailOpen, label: 'Opens' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ]
 

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -6,16 +7,17 @@ interface StatsCardProps {
   value: string | number
   subtitle?: string
   icon: LucideIcon
-  trend?: { value: number; label: string }
   accent?: boolean
+  href?: string
 }
 
-export function StatsCard({ title, value, subtitle, icon: Icon, accent }: StatsCardProps) {
-  return (
+export function StatsCard({ title, value, subtitle, icon: Icon, accent, href }: StatsCardProps) {
+  const inner = (
     <div
       className={cn(
         'bg-surface border border-border rounded-xl p-5 flex flex-col gap-3',
         accent && 'border-accent/30 bg-accent/5',
+        href && 'cursor-pointer hover:border-accent/40 transition-colors',
       )}
     >
       <div className="flex items-start justify-between">
@@ -30,4 +32,7 @@ export function StatsCard({ title, value, subtitle, icon: Icon, accent }: StatsC
       </div>
     </div>
   )
+
+  if (href) return <Link href={href}>{inner}</Link>
+  return inner
 }
