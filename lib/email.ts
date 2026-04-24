@@ -18,7 +18,7 @@ interface SendEmailParams {
   userId: string
 }
 
-export async function sendEmail(params: SendEmailParams): Promise<void> {
+export async function sendEmail(params: SendEmailParams): Promise<{ threadId?: string }> {
   const user = await prisma.user.findUnique({ where: { id: params.userId } })
 
   if (!user?.googleRefreshToken || !user?.googleEmail) {
@@ -60,7 +60,49 @@ export async function sendEmail(params: SendEmailParams): Promise<void> {
   ]
 
   const raw = Buffer.from(messageParts.join('\n')).toString('base64url')
-  await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
+  const response = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
+
+  return { threadId: response.data.threadId ?? undefined }
+}
+
+export async function checkThreadForReply(params: {
+  threadId: string
+  userId: string
+  sentAt: Date
+  leadEmail: string
+}): Promise<boolean> {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: params.userId } })
+    if (!user?.googleRefreshToken) return false
+
+    const oauth2Client = getOAuth2Client()
+    oauth2Client.setCredentials({ refresh_token: user.googleRefreshToken })
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+
+    const thread = await gmail.users.threads.get({
+      userId: 'me',
+      id: params.threadId,
+      format: 'metadata',
+      metadataHeaders: ['From'],
+    })
+
+    const messages = thread.data.messages || []
+    const sentAtMs = params.sentAt.getTime()
+    const leadEmailLower = params.leadEmail.toLowerCase()
+
+    for (const msg of messages) {
+      const internalDate = parseInt(msg.internalDate || '0', 10)
+      if (internalDate <= sentAtMs) continue
+      const fromHeader = (msg.payload?.headers || []).find(
+        (h) => h.name?.toLowerCase() === 'from',
+      )
+      if (fromHeader?.value?.toLowerCase().includes(leadEmailLower)) return true
+    }
+
+    return false
+  } catch {
+    return false
+  }
 }
 
 export async function verifyGmail(userId: string): Promise<string> {

@@ -269,11 +269,11 @@ function LeadsPage() {
   const newLeadsWithUrl = leads.filter((l) => l.status === 'NEW' && l.websiteUrl).length
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-5 md:mb-6 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-text-1 tracking-tight">
+          <h1 className="text-xl md:text-2xl font-bold text-text-1 tracking-tight">
             {openedOnly ? 'Leads with Opened Emails' : 'Leads'}
           </h1>
           <p className="text-sm text-text-2 mt-1">
@@ -283,18 +283,19 @@ function LeadsPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap">
           {newLeadsWithUrl > 0 && (
-            <Button variant="secondary" onClick={handleAnalyzeAllNew}>
+            <Button variant="secondary" onClick={handleAnalyzeAllNew} size="sm">
               <Zap className="w-4 h-4" />
-              Analyze All New ({newLeadsWithUrl})
+              <span className="hidden sm:inline">Analyze All New ({newLeadsWithUrl})</span>
+              <span className="sm:hidden">Analyze ({newLeadsWithUrl})</span>
             </Button>
           )}
-          <Button variant="secondary" onClick={() => setShowImport(true)}>
+          <Button variant="secondary" onClick={() => setShowImport(true)} size="sm">
             <Upload className="w-4 h-4" />
             Import
           </Button>
-          <Button onClick={() => setShowAdd(true)}>
+          <Button onClick={() => setShowAdd(true)} size="sm">
             <Plus className="w-4 h-4" />
             Add Lead
           </Button>
@@ -302,8 +303,8 @@ function LeadsPage() {
       </div>
 
       {/* Search & Filters */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex items-center gap-2 md:gap-3 mb-4">
+        <div className="relative flex-1 min-w-0 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-3" />
           <input
             type="text"
@@ -334,7 +335,7 @@ function LeadsPage() {
       </div>
 
       {showFilters && (
-        <div className="flex items-end gap-3 mb-4 p-4 bg-surface border border-border rounded-lg animate-fade-in">
+        <div className="flex flex-wrap items-end gap-3 mb-4 p-4 bg-surface border border-border rounded-lg animate-fade-in">
           <Select
             label="Status"
             value={statusFilter}
@@ -373,7 +374,7 @@ function LeadsPage() {
 
       {/* Bulk action bar — appears when leads are selected */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 mb-4 px-4 py-3 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
+        <div className="flex items-center gap-2 md:gap-3 mb-4 px-3 md:px-4 py-2.5 md:py-3 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in overflow-x-auto">
           <CheckSquare className="w-4 h-4 text-accent shrink-0" />
           <span className="text-sm font-medium text-text-1">
             {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} selected

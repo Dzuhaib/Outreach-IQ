@@ -55,15 +55,16 @@ model Lead {
 }
 
 model Email {
-  id        String    @id @default(cuid())
-  leadId    String
-  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  subject   String
-  body      String
-  type      String    @default("INITIAL")
-  sentAt    DateTime?
-  openedAt  DateTime?
-  openCount Int       @default(0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  leadId        String
+  lead          Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  subject       String
+  body          String
+  type          String    @default("INITIAL")
+  sentAt        DateTime?
+  openedAt      DateTime?
+  openCount     Int       @default(0)
+  gmailThreadId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }

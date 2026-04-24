@@ -45,9 +45,9 @@ export default function OpenedEmailsPage() {
   if (loading) return <PageLoader text="Loading opened emails…" />
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-4 md:p-8 max-w-4xl">
       {/* Header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex items-start justify-between mb-6 md:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-text-1 tracking-tight">Opened Emails</h1>
           <p className="text-sm text-text-2 mt-1">

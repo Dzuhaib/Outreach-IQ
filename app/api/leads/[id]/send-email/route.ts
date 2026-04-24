@@ -23,13 +23,13 @@ export async function POST(request: Request, { params }: { params: Params }) {
     if (!email) return NextResponse.json({ error: 'Email not found' }, { status: 404 })
     if (email.sentAt) return NextResponse.json({ error: 'This email has already been sent' }, { status: 400 })
 
-    await sendEmail({ to: lead.email, subject: email.subject, body: email.body, emailId, userId: user.id })
+    const { threadId } = await sendEmail({ to: lead.email, subject: email.subject, body: email.body, emailId, userId: user.id })
 
     const now = new Date()
     const newLeadStatus = email.type === 'INITIAL' ? 'EMAIL_SENT' : 'FOLLOWED_UP'
 
     await prisma.$transaction([
-      prisma.email.update({ where: { id: emailId }, data: { sentAt: now } }),
+      prisma.email.update({ where: { id: emailId }, data: { sentAt: now, gmailThreadId: threadId } }),
       prisma.lead.update({ where: { id }, data: { status: newLeadStatus } }),
     ])
 

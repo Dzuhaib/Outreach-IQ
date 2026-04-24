@@ -133,8 +133,8 @@ function SettingsContent() {
   if (loading) return <PageLoader text="Loading settings…" />
 
   return (
-    <div className="p-8 max-w-2xl">
-      <div className="mb-8 flex items-start justify-between">
+    <div className="p-4 md:p-8 max-w-2xl">
+      <div className="mb-6 md:mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-text-1 tracking-tight">Settings</h1>
           <p className="text-sm text-text-2 mt-1">Configure your AI and Gmail credentials</p>

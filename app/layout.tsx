@@ -3,6 +3,7 @@ import { Space_Grotesk } from 'next/font/google'
 import { cookies } from 'next/headers'
 import './globals.css'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { MobileNav } from '@/components/layout/MobileNav'
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -23,9 +24,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={spaceGrotesk.variable}>
       <body className="bg-bg text-text-1 font-sans flex h-screen overflow-hidden">
         {isAuthenticated && <Sidebar />}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto pb-28 md:pb-0">
           {children}
         </main>
+        {isAuthenticated && <MobileNav />}
       </body>
     </html>
   )

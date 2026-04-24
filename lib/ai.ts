@@ -366,8 +366,8 @@ export async function analyzeWebsite(
   const painPoints: PainPoint[] = []
   if (chatbot && !chatbot.hasChatbot) {
     painPoints.push({
-      category: 'Features',
-      description: 'No live chat or chatbot detected — visitors may leave without a quick contact option.',
+      category: 'AI Chatbot',
+      description: 'No AI Chatbot detected. Visitors have no instant contact option, meaning potential leads are lost when no one is available to respond.',
       severity: 'medium',
     })
   }
@@ -410,6 +410,7 @@ export async function generateEmail(params: {
   websiteUrl: string | null
   analysis: RichAnalysis | WebsiteAnalysis
   type: 'INITIAL' | 'FOLLOW_UP_3' | 'FOLLOW_UP_7'
+  openCount?: number
   senderName: string | null
   signature: string | null
   userId?: string
@@ -417,120 +418,166 @@ export async function generateEmail(params: {
   const { client, model } = await getClient(params.userId || '')
 
   const isFollowUp = params.type !== 'INITIAL'
-  const followUpContext =
-    params.type === 'FOLLOW_UP_3'
-      ? 'This is a 3-day follow-up. They have not replied. Reference the previous email briefly. Keep it short.'
-      : params.type === 'FOLLOW_UP_7'
-      ? 'This is a final 7-day follow-up. Very short — 2-3 sentences max. Graceful last attempt.'
-      : ''
-
+  const isFinalFollowUp = params.type === 'FOLLOW_UP_7'
+  const openCount = params.openCount ?? 0
   const rich = 'types' in params.analysis ? (params.analysis as RichAnalysis) : null
-  const onlySEO = rich?.types.length === 1 && rich.types[0] === 'seo'
-  const onlyChatbot = rich?.types.length === 1 && rich.types[0] === 'chatbot'
-  const hasSEO = !!rich?.seo
   const sigBlock = params.signature ? `\nSignature to include:\n${params.signature}` : ''
 
-  let prompt: string
+  // ── Service names (used in both initial and follow-up prompts) ──────────────
+  const analyzedTypes: AnalysisType[] = rich?.types || []
+  const serviceNames = analyzedTypes.length > 0
+    ? analyzedTypes.map((t) =>
+        t === 'chatbot' ? 'AI Chatbot (24/7 Lead Generation)'
+        : t === 'website' ? 'Website Optimization'
+        : 'SEO'
+      ).join(', ')
+    : 'Website Improvements'
 
-  if (onlySEO && rich!.seo) {
-    const seo = rich!.seo
-    const contactRec = seo.contactRecommendation ?? 'yes'
-    const contactReason = seo.contactReason || ''
+  // ══════════════════════════════════════════════════════════════════════════════
+  // FOLLOW-UP PATH — open-count-aware, short, personal, not a re-pitch
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (isFollowUp) {
+    let engagementContext: string
+    let bodyInstruction: string
 
-    // SEO-only mode: proposal to win/beat their team — NEVER list technical problems
-    prompt = `You are writing a cold outreach email for an SEO agency pitching to a small business.
+    if (openCount === 0) {
+      engagementContext = `The prospect has NOT opened the previous email. They may have missed it completely.`
+      bodyInstruction = `Gently remind them about your previous email. Re-state the core value in one sentence. Keep the tone light — no pressure. End with a soft question like whether they had a chance to take a look.`
+    } else if (openCount === 1) {
+      engagementContext = `The prospect opened the previous email exactly once but did not reply.`
+      bodyInstruction = `Acknowledge naturally that they had a chance to read through your last email. Write something along these lines: you saw they had a look at what you shared about ${serviceNames}, and you wanted to check in — maybe they have a question or something they are not sure about, and you are happy to clear anything up. Keep it warm, genuine and inviting. No pressure.`
+    } else {
+      engagementContext = `The prospect opened the previous email ${openCount} times without replying. This is a clear signal of strong interest — they keep coming back to it but something is holding them back, likely questions or uncertainty.`
+      bodyInstruction = `Write with confidence. Acknowledge that they have been reading through your last email more than once — they are clearly thinking about it. Write something along these lines: you noticed they have gone back to your email a few times, which tells you they are interested, and you think they might have some questions or want to understand more — so why not get on a quick call and talk through it properly. Be warm and direct, not pushy.`
+    }
 
-Business: ${params.businessName}
-City: ${params.city || 'unknown'}
-Industry: ${params.niche || 'unknown'}
-Website: ${params.websiteUrl || 'unknown'}
-Their SEO health score: ${seo.score}/100
-Contact recommendation: ${contactRec}
-Why this is a good prospect: ${contactReason}
-${isFollowUp ? followUpContext : ''}
-
-STRICT RULES — read carefully:
-- Do NOT list their specific SEO problems, missing tags, broken signals, or technical issues — they will fix it themselves and not need us
-- Do NOT say things like "your website is missing X" or "your site has Y problem"
-- DO position our agency as experts who can OUTPERFORM their current SEO situation or competitors
-- DO focus on OUTCOMES: more leads from Google, beating competitors in search, growing non-branded traffic
-- DO imply you spotted a competitive gap or opportunity — be vague about the specifics
-- Frame it as: "we found an opportunity in your market" NOT "we found problems on your site"
-- If their score is low (${seo.score < 40 ? 'it is — ' + seo.score + '/100' : 'consider their competitive position'}), the opportunity for growth is large — make that compelling
-- Use a low-pressure CTA — a curious question like "would it be worth a quick look?"
-- Max ${isFollowUp ? '70' : '130'} words
-- Conversational and confident — not desperate or salesy
-- Sender: ${params.senderName || 'the team'}${sigBlock}
-
-Respond ONLY with valid JSON:
-{ "subject": "subject line", "body": "email body with \\n for line breaks" }`
-
-  } else if (onlyChatbot && rich!.chatbot) {
-    const { hasChatbot, platform } = rich!.chatbot
-    prompt = `You are writing a cold outreach email for a web agency specialising in chat and lead capture.
+    const prompt = `You are a senior copywriter writing a ${isFinalFollowUp ? 'final' : 'first'} follow-up cold email for a digital agency.
 
 Business: ${params.businessName}
 City: ${params.city || 'unknown'}
 Industry: ${params.niche || 'unknown'}
-Website: ${params.websiteUrl || 'unknown'}
-Has chatbot/live chat: ${hasChatbot ? `Yes — ${platform}` : 'No'}
-${isFollowUp ? followUpContext : ''}
+Services pitched in previous email: ${serviceNames}
+${isFinalFollowUp ? 'IMPORTANT: This is the FINAL follow-up. Keep it very short. Graceful last attempt. Leave the door open for the future.' : ''}
 
-${hasChatbot
-  ? `They already use ${platform}. Write an email about improving chat conversion rates, integrating with CRM, or upgrading their chat experience to capture more leads.`
-  : 'They have no chatbot. Write about the leads they lose every day without instant response capability.'
-}
+=== EMAIL ENGAGEMENT DATA ===
+${engagementContext}
 
-Rules:
-- Open with something specific about their business/industry
-- One concrete business benefit (leads, availability, conversions)
-- Low-pressure CTA — a genuine question
-- Max ${isFollowUp ? '70' : '120'} words
-- Sounds like a real person, no buzzwords
-- Sender: ${params.senderName || 'the team'}${sigBlock}
+=== HOW TO WRITE THE BODY ===
+${bodyInstruction}
 
-Respond ONLY with valid JSON:
-{ "subject": "subject line", "body": "email body with \\n for line breaks" }`
+=== WRITING RULES — follow every single one ===
 
-  } else {
-    // General web dev pitch — website issues, or mixed analyses
-    const analysis = params.analysis
-    const painPoints = 'painPoints' in analysis ? analysis.painPoints : []
-    const painPointsSummary = painPoints
+SUBJECT LINE:
+- Must feel like a genuine, human follow-up — not a fresh marketing pitch
+- Use curiosity or a soft, confident hook that fits a follow-up context
+- Keep it under 9 words
+- No dashes or special characters
+- Good follow-up subject tones (do not copy verbatim): "Still thinking it over?", "Did you get a chance to look?", "Had a chance to read this?", "Quick thought on my last email", "You opened this a few times..."
+
+EMAIL BODY:
+- Maximum ${isFinalFollowUp ? '60' : '80'} words
+- Must feel like a real person checking in — not an automated email sequence
+- Reference the previous email naturally, without saying "as per my last email"
+- Address the engagement signal (from the context above) in a natural, non-creepy way — it should feel observant, not surveillance-like
+- End with exactly one soft, direct question as the CTA
+- Short paragraphs only — no bullet points, no numbered lists
+- ABSOLUTELY NO dashes of any kind (no em dash, no en dash, no hyphen used as a separator) anywhere in the body or subject
+- No buzzwords: leverage, synergy, game-changer, innovative, cutting-edge, solutions, empower
+- Warm but confident tone — like a colleague following up, not a salesperson chasing
+- Sender name: ${params.senderName || 'the team'}${sigBlock}
+
+Respond ONLY with valid JSON — no markdown, no explanation:
+{ "subject": "subject line here", "body": "email body here with \\n for paragraph breaks" }`
+
+    const res = await client.chat.completions.create({
+      model, max_tokens: 600, temperature: 0.7,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    const text = res.choices[0]?.message?.content || ''
+    const m = text.match(/\{[\s\S]*\}/)
+    if (!m) throw new Error('AI returned invalid email format')
+    return JSON.parse(m[0]) as { subject: string; body: string }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // INITIAL EMAIL PATH — full service-aware pitch
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  const serviceContextParts: string[] = []
+
+  if (analyzedTypes.includes('chatbot') && rich?.chatbot) {
+    const { hasChatbot, platform } = rich.chatbot
+    serviceContextParts.push(
+      hasChatbot
+        ? `AI CHATBOT: They already have a chat widget (${platform}). Pitch upgrading to a full AI Chatbot that works 24/7 for lead generation and automated qualification — their current tool is passive, ours is proactive.`
+        : `AI CHATBOT: No chatbot detected on their site. They are losing potential leads every hour they are offline. Pitch: an AI Chatbot that works 24/7 for lead generation — it captures and qualifies visitors automatically, even at 3am.`
+    )
+  }
+
+  if (analyzedTypes.includes('website') && rich?.website) {
+    const topIssues = rich.website.issues
+      .filter((i) => i.severity !== 'low')
+      .slice(0, 2)
+      .map((i) => i.description)
+      .join('; ') || 'performance and design improvements needed'
+    serviceContextParts.push(
+      `WEBSITE OPTIMIZATION: Score ${rich.website.score}/100. Issues found: ${topIssues}. Pitch the benefits: faster load speed, modern trustworthy design, better user experience that converts visitors into customers.`
+    )
+  }
+
+  if (analyzedTypes.includes('seo') && rich?.seo) {
+    const seo = rich.seo
+    serviceContextParts.push(
+      `SEO: Score ${seo.score}/100. Opportunity: ${seo.contactReason || 'competitive gap in their market'}. Pitch the benefits: more traffic from Google, outranking competitors, growing leads without paid ads. Do NOT reveal specific technical problems — frame it as a growth opportunity only.`
+    )
+  }
+
+  if (!rich) {
+    const legacyAnalysis = params.analysis as WebsiteAnalysis
+    const painPoints = legacyAnalysis.painPoints
       .filter((p) => p.severity !== 'low')
       .slice(0, 3)
-      .map((p) => `- ${p.category}: ${p.description}`)
-      .join('\n')
+      .map((p) => `${p.category}: ${p.description}`)
+      .join('; ') || 'general website improvements needed'
+    serviceContextParts.push(`WEBSITE: ${painPoints}`)
+  }
 
-    // If SEO is included in a mixed analysis, don't reveal specific SEO issues
-    const seoNote = hasSEO
-      ? '\n- For any SEO points: stay vague, frame as a growth opportunity — never list specific SEO problems'
-      : ''
-
-    prompt = `You are writing a cold outreach email for a web development agency.
+  const prompt = `You are a senior copywriter writing a cold outreach email for a digital agency. You have analyzed the prospect's website and found clear opportunities.
 
 Business: ${params.businessName}
 City: ${params.city || 'unknown'}
 Industry: ${params.niche || 'unknown'}
 Website: ${params.websiteUrl || 'no website'}
-${isFollowUp ? followUpContext : ''}
+Services we are pitching (based on analysis): ${serviceNames}
 
-Problems found on their website:
-${painPointsSummary || '- General website improvements needed'}
+=== SERVICES ANALYZED AND CONTEXT ===
+${serviceContextParts.join('\n\n')}
 
-Write a ${isFollowUp ? 'follow-up' : 'cold'} email that:
-- Opens with something specific about THEIR business
-- Mentions 1-2 specific problems (not all of them)
-- Explains the business benefit of fixing them
-- Has a low-pressure CTA (curious question, not "book a call now")
-- Max ${isFollowUp ? '80' : '150'} words
-- Sounds like a real person wrote it, not a marketing team
-- NO buzzwords: leverage, synergy, solutions, game-changer, innovative${seoNote}
-- Sender: ${params.senderName || 'the team'}${sigBlock}
+=== WRITING RULES — follow every single one ===
 
-Respond ONLY with valid JSON:
-{ "subject": "subject line", "body": "email body with \\n for line breaks" }`
-  }
+SUBJECT LINE:
+- Must be highly compelling and curiosity-driven — the kind that makes someone stop scrolling and open the email
+- Use psychological triggers: FOMO, curiosity, specificity to their business or industry
+- Keep it under 9 words
+- No clickbait spam words (free, guaranteed, limited time)
+- No dashes or special characters
+
+EMAIL BODY:
+- Open with a confident, specific observation about their business or industry — not a generic compliment
+- Dedicate 1 to 2 sentences to EACH service listed in "${serviceNames}" — cover all of them, in order
+- For each service, focus entirely on the BUSINESS BENEFIT to them, not the technical detail
+- For AI Chatbot: ALWAYS write "AI Chatbot that works 24/7 for lead generation" — NEVER write "live chat", "chat widget", or "chat system"
+- For SEO: frame as a growth and competitive opportunity — NEVER reveal specific technical problems
+- End with one soft CTA — a genuine, curious question (not "book a call", not "schedule a demo")
+- Maximum 150 words for the entire body
+- Write in short, flowing paragraphs — no bullet points, no numbered lists
+- ABSOLUTELY NO dashes of any kind (no em dash, no en dash, no hyphen used as a separator) anywhere in the subject or body
+- No buzzwords: leverage, synergy, game-changer, innovative, cutting-edge, solutions, empower
+- Sound like a real person — confident and direct, not a marketing robot
+- Sender name: ${params.senderName || 'the team'}${sigBlock}
+
+Respond ONLY with valid JSON — no markdown, no explanation:
+{ "subject": "subject line here", "body": "email body here with \\n for paragraph breaks" }`
 
   const res = await client.chat.completions.create({
     model, max_tokens: 1024, temperature: 0.7,

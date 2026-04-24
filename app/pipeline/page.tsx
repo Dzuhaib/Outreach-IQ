@@ -29,9 +29,9 @@ export default function PipelinePage() {
   }, [])
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-1 tracking-tight">Pipeline</h1>
+    <div className="p-4 md:p-8">
+      <div className="mb-5 md:mb-6">
+        <h1 className="text-xl md:text-2xl font-bold text-text-1 tracking-tight">Pipeline</h1>
         <p className="text-sm text-text-2 mt-1">Track leads through your outreach stages</p>
       </div>
 

@@ -222,10 +222,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const hasFollowUp3Sent = !!followUp3?.sentAt
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-4 md:p-8 max-w-4xl">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div className="flex items-start gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-5 md:mb-6 gap-3">
+        <div className="flex items-start gap-3 md:gap-4">
           <Link href="/leads">
             <button className="p-2 rounded-lg hover:bg-surface-2 text-text-2 hover:text-text-1 transition-colors mt-0.5">
               <ArrowLeft className="w-4 h-4" />
@@ -257,7 +257,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         {/* Lead Info */}
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-text-1 mb-4">Lead Information</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
             {lead.websiteUrl && (
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-text-3 shrink-0" />

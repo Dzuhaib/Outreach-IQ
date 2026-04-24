@@ -26,6 +26,16 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
     const analysis: WebsiteAnalysis | RichAnalysis = JSON.parse(lead.analysis)
 
+    // For follow-ups, fetch the initial email's open count to personalise the message
+    let initialOpenCount = 0
+    if (type !== 'INITIAL') {
+      const initialEmail = await prisma.email.findFirst({
+        where: { leadId: id, type: 'INITIAL' },
+        select: { openCount: true },
+      })
+      initialOpenCount = initialEmail?.openCount ?? 0
+    }
+
     const { subject, body } = await generateEmail({
       businessName: lead.businessName,
       city: lead.city,
@@ -33,6 +43,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       websiteUrl: lead.websiteUrl,
       analysis,
       type,
+      openCount: initialOpenCount,
       senderName: user.senderName,
       signature: user.signature,
       userId: user.id,
